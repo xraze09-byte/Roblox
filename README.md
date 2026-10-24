@@ -4,14 +4,12 @@ Server-authoritative 1v1 card battle with a random "Gate" slot.
 
 ## Structure
 ```
-ReplicatedStorage/Shared/Config.lua
-ServerStorage/Modules/GateRNG.lua
-ServerStorage/Modules/Match.lua
-ServerScriptService/MatchHandler.server.lua
-ServerScriptService/MatchService.server.lua   (สร้างแมตช์ทดสอบกับบอท)
-ServerStorage/Modules/MatchRegistry.lua
-ReplicatedStorage/Shared/CardData.lua         (การ์ดทดสอบ 10 ใบ)
-StarterPlayer/StarterPlayerScripts/MatchUI.client.lua
+ReplicatedStorage/Shared/Config.lua, CardData.lua
+ReplicatedStorage/Shared/UI/{Theme,UIKit,CardView}.lua
+ServerStorage/Modules/{GateRNG,Match,MatchRegistry}.lua
+ServerScriptService/MatchHandler.server.lua   (remotes: PlayCard, Attack, EndTurn)
+ServerScriptService/MatchService.server.lua   (2 players = PvP, alone for 5s = bot match)
+StarterPlayer/StarterPlayerScripts/UIClient/  (init.client.lua + LobbyUI, MatchUI, GateRoller)
 ```
 
 ## Rules summary

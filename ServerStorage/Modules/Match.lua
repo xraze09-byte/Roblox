@@ -3,6 +3,8 @@ local ServerStorage = game:GetService("ServerStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local GateRNG = require(ServerStorage.Modules.GateRNG)
 local Remotes = ReplicatedStorage.Remotes
+local HttpService = game:GetService("HttpService")
+local CardData = require(ReplicatedStorage.Shared.CardData)
 
 local Match = {}
 Match.__index = Match
@@ -10,6 +12,16 @@ Match.__index = Match
 -- บอทเป็นตารางธรรมดา ส่วน Player จริงเป็น Instance (อ่าน .IsBot บน Instance จะ error)
 local function isBot(p)
 	return typeof(p) == "table" and p.IsBot == true
+end
+
+-- สร้างการ์ด 1 ใบ พร้อมรหัสประจำใบ (Uid)
+function Match.MakeCard(id)
+	local data = CardData[id]
+	assert(data, "ไม่พบการ์ด " .. tostring(id))
+	local card = table.clone(data)
+	card.Id = id
+	card.Uid = HttpService:GenerateGUID(false)
+	return card
 end
 
 local function shuffle(t)
@@ -38,6 +50,7 @@ function Match.new(p1, p2, deck1, deck2, leader1, leader2)
 	self.sides = { [p1] = newSide(deck1, leader1), [p2] = newSide(deck2, leader2) }
 	self.turnToken = 0
 	self.ended = false
+	self.id = HttpService:GenerateGUID(false)
 	return self
 end
 
@@ -49,6 +62,7 @@ function Match:StartTurn(player)
 	if self.ended then return end
 	self.current = player
 	self.turnToken += 1
+	self.turnEndsAt = workspace:GetServerTimeNow() + Config.TURN_TIME
 	local token = self.turnToken
 	local side = self.sides[player]
 
@@ -105,6 +119,7 @@ function Match:PlayCard(player, handIndex, target)
 	local card = side.hand[handIndex]
 	if not card then return false, "INVALID_CARD" end
 
+	if card.Type ~= "Character" then return false, "INVALID_CARD" end -- Spell/Weapon ยังไม่เปิดใช้ (TODO CardEffects)
 	local cost = card.Cost
 	if card.Type == "Character" and target == "Gate" then
 		cost = math.max(0, cost - Config.GATE_DISCOUNT)
@@ -117,7 +132,7 @@ function Match:PlayCard(player, handIndex, target)
 			side.gate = card
 		else
 			if #side.field >= Config.FIELD_SLOTS then return false, "FIELD_FULL" end
-			card.CanAttack = false
+			card.CanAttack = card.Keywords ~= nil and table.find(card.Keywords, "Rush") ~= nil
 			table.insert(side.field, card)
 		end
 	end
@@ -139,10 +154,59 @@ function Match:EndTurn(player, timedOut)
 	self:StartTurn(self:Opponent(player))
 end
 
+-- ===== ระบบโจมตีพื้นฐาน =====
+local function findByUid(list, uid)
+	for i, c in list do
+		if c.Uid == uid then return c, i end
+	end
+end
+
+local function hasTaunt(card)
+	return card.Keywords ~= nil and table.find(card.Keywords, "Taunt") ~= nil
+end
+
+function Match:Attack(player, attackerUid, targetUid)
+	if self.ended or self.current ~= player then return false, "NOT_YOUR_TURN" end
+	local me, opp = self.sides[player], self.sides[self:Opponent(player)]
+	local attacker = findByUid(me.field, attackerUid)
+	if not attacker or not attacker.CanAttack or (attacker.ATK or 0) <= 0 then return false, "CANNOT_ATTACK" end
+
+	local tauntUp = false
+	for _, c in opp.field do
+		if hasTaunt(c) then tauntUp = true break end
+	end
+
+	if targetUid == "LEADER" then
+		if tauntUp then return false, "TAUNT" end
+		opp.leaderHP -= attacker.ATK
+	else
+		local target = findByUid(opp.field, targetUid)
+		if not target then return false, "INVALID_TARGET" end
+		if tauntUp and not hasTaunt(target) then return false, "TAUNT" end
+		target.HP -= attacker.ATK
+		attacker.HP -= (target.ATK or 0) -- โดนสวนกลับ
+	end
+	attacker.CanAttack = false
+	me.afk = 0
+
+	for _, side in { me, opp } do -- ย้ายการ์ดที่ตายลงช่องตาย
+		for i = #side.field, 1, -1 do
+			if side.field[i].HP <= 0 then
+				table.insert(side.graveyard, table.remove(side.field, i))
+			end
+		end
+	end
+
+	self:Broadcast()
+	if opp.leaderHP <= 0 then self:EndMatch(player, "LEADER_DOWN") end
+	return true
+end
+
 function Match:EndMatch(winner, reason)
+	if self.ended then return end
 	self.ended = true
 	for _, rp in self.players do
-		if not isBot(rp) then Remotes.MatchEnded:FireClient(rp, winner.UserId, reason) end
+		if not isBot(rp) then Remotes.MatchEnded:FireClient(rp, winner.UserId, reason, self.id) end
 	end
 	-- TODO: แจกเพชร, คำนวณค่าหัว, อัปเดต Leaderboard
 end
@@ -153,11 +217,16 @@ function Match:Broadcast()
 		if isBot(p) then continue end
 		local me, opp = self.sides[p], self.sides[self:Opponent(p)]
 		Remotes.StateUpdate:FireClient(p, {
-			myHand = me.hand, myField = me.field, myGate = me.gate,
-			myPoints = me.points, myHP = me.leaderHP,
-			oppHandCount = #opp.hand, oppField = opp.field,
-			oppGateFilled = opp.gate ~= nil, oppHP = opp.leaderHP,
+			matchId = self.id,
 			isMyTurn = self.current == p,
+			turnEndsAt = self.turnEndsAt,
+			myHand = me.hand, myField = me.field, myGate = me.gate,
+			myPoints = me.points, mySpent = me.spentThisTurn,
+			myHP = me.leaderHP, myLeader = me.leader.Name,
+			myDeck = #me.deck, myGrave = #me.graveyard,
+			oppField = opp.field, oppGateFilled = opp.gate ~= nil,
+			oppHandCount = #opp.hand, oppHP = opp.leaderHP, oppLeader = opp.leader.Name,
+			oppDeck = #opp.deck, oppGrave = #opp.graveyard,
 		})
 	end
 end
