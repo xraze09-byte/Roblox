@@ -4,6 +4,22 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
+-- 0) ลบสคริปต์เก่าที่ Rojo ไม่ได้ลบให้ (ถ้าค้างอยู่ จะแย่งรับ Remote กับสคริปต์นี้)
+do
+	local ServerScriptService = game:GetService("ServerScriptService")
+	local ServerStorage = game:GetService("ServerStorage")
+	local function purge(parent, name)
+		local old = parent and parent:FindFirstChild(name)
+		if old then
+			warn(("[GameServer] พบ %s เก่าค้างอยู่ ลบทิ้งให้แล้ว (ลบออกจาก Studio ด้วยเพื่อไม่ให้เตือนซ้ำ)"):format(name))
+			old:Destroy()
+		end
+	end
+	purge(ServerScriptService, "MatchHandler")
+	purge(ServerScriptService, "MatchService")
+	purge(ServerStorage:FindFirstChild("Modules"), "MatchRegistry")
+end
+
 -- 1) สร้าง Remotes อัตโนมัติ (ต้องทำก่อน require Match)
 local REMOTES = {
 	RemoteFunction = { "PlayCard", "Attack", "Queue" },
@@ -27,6 +43,13 @@ for className, names in REMOTES do
 			r.Parent = Remotes
 		end
 	end
+end
+for _, child in Remotes:GetChildren() do
+	local keep = false
+	for _, names in REMOTES do
+		if table.find(names, child.Name) then keep = true break end
+	end
+	if not keep then child:Destroy() end
 end
 Remotes.Parent = ReplicatedStorage
 
