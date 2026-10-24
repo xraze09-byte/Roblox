@@ -59,6 +59,13 @@
         "$path": "ServerStorage/Modules"
       }
     },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$path": "StarterPlayer/StarterPlayerScripts"
+      }
+    },
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "$path": "ServerScriptService"

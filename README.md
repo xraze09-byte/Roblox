@@ -8,6 +8,10 @@ ReplicatedStorage/Shared/Config.lua
 ServerStorage/Modules/GateRNG.lua
 ServerStorage/Modules/Match.lua
 ServerScriptService/MatchHandler.server.lua
+ServerScriptService/MatchService.server.lua   (สร้างแมตช์ทดสอบกับบอท)
+ServerStorage/Modules/MatchRegistry.lua
+ReplicatedStorage/Shared/CardData.lua         (การ์ดทดสอบ 10 ใบ)
+StarterPlayer/StarterPlayerScripts/MatchUI.client.lua
 ```
 
 ## Rules summary

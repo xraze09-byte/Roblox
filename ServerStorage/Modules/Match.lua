@@ -7,6 +7,11 @@ local Remotes = ReplicatedStorage.Remotes
 local Match = {}
 Match.__index = Match
 
+-- บอทเป็นตารางธรรมดา ส่วน Player จริงเป็น Instance (อ่าน .IsBot บน Instance จะ error)
+local function isBot(p)
+	return typeof(p) == "table" and p.IsBot == true
+end
+
 local function shuffle(t)
 	local rng = Random.new()
 	for i = #t, 2, -1 do
@@ -60,7 +65,9 @@ function Match:StartTurn(player)
 		GateRNG.Apply(card, outcome)
 		card.CanAttack = true
 		table.insert(side.field, card)
-		Remotes.GateRolled:FireAllClients(player.UserId, card, outcome.id)
+		for _, rp in self.players do
+			if not isBot(rp) then Remotes.GateRolled:FireClient(rp, player.UserId, card, outcome.id) end
+		end
 	end
 
 	-- จั่ว: 2 ใบ แต่มือต้องไม่เกิน 5 (ถ้ามี 4 ใบจะได้จั่วแค่ 1 ใบ)
@@ -134,13 +141,16 @@ end
 
 function Match:EndMatch(winner, reason)
 	self.ended = true
-	Remotes.MatchEnded:FireAllClients(winner.UserId, reason)
+	for _, rp in self.players do
+		if not isBot(rp) then Remotes.MatchEnded:FireClient(rp, winner.UserId, reason) end
+	end
 	-- TODO: แจกเพชร, คำนวณค่าหัว, อัปเดต Leaderboard
 end
 
 function Match:Broadcast()
 	-- ส่งสถานะแยกให้แต่ละคน (ห้ามส่งไพ่ในมือของอีกฝั่งไปให้ดู)
 	for _, p in self.players do
+		if isBot(p) then continue end
 		local me, opp = self.sides[p], self.sides[self:Opponent(p)]
 		Remotes.StateUpdate:FireClient(p, {
 			myHand = me.hand, myField = me.field, myGate = me.gate,
