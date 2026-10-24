@@ -1,13 +1,21 @@
-local Config = {
-	DECK_COMPOSITION = { Character = 12, Spell = 7, Weapon = 5, Leader = 1 },
+-- ReplicatedStorage/Shared/Config (ModuleScript)
+return {
+	DECK_COMPOSITION = { Character = 12, Spell = 7, Weapon = 5 }, -- + ผู้นำ 1 = 25 ใบ
+	MAX_SHIELDS_IN_DECK = 2,
+	STARTING_HAND = 3,
 	POINTS_PER_TURN = 5,
 	MAX_BANKED_POINTS = 15,
 	DRAW_PER_TURN = 2,
 	MAX_HAND = 5,
 	FIELD_SLOTS = 3,
 	TURN_TIME = 120,
-	AFK_LIMIT = 2,        -- หมดเวลาเกิน 2 รอบติด = โดนฟ้าผ่า
+	AFK_LIMIT = 2,
 	LEADER_HP = 30,
 	GATE_DISCOUNT = 1,
+	KEYWORD_COST = 2,
+
+	REWARD_WIN_PVP = 30,
+	REWARD_LOSE_PVP = 5,
+	REWARD_WIN_BOT = 10,
+	BOUNTY_PER_STREAK = 10,
 }
-return Config

@@ -1,32 +1,39 @@
 # Gawa Card Battle: RNG Troll (Roblox)
 
-Server-authoritative 1v1 card battle with a random "Gate" slot.
+Server-authoritative 1v1 card battle with a random "Gate" slot. Version: **Core v1.0**.
 
 ## Structure
 ```
-ReplicatedStorage/Shared/Config.lua, CardData.lua
-ReplicatedStorage/Shared/UI/{Theme,UIKit,CardView}.lua
-ServerStorage/Modules/{GateRNG,Match,MatchRegistry}.lua
-ServerScriptService/MatchHandler.server.lua   (remotes: PlayCard, Attack, EndTurn)
-ServerScriptService/MatchService.server.lua   (2 players = PvP, alone for 5s = bot match)
-StarterPlayer/StarterPlayerScripts/UIClient/  (init.client.lua + LobbyUI, MatchUI, GateRoller)
+ReplicatedStorage/Shared/        Config, Rules, CardData, Decks
+ReplicatedStorage/Shared/UI/     Theme, UIKit, CardView
+ServerStorage/Modules/           GateRNG, CardEffects, BotAI, Match, DataService
+ServerScriptService/             GameServer (creates Remotes, matchmaking, rewards), CardValidator
+StarterPlayer/StarterPlayerScripts/UIClient/   init.client + LobbyUI, MatchUI, GateRoller
 ```
+`Remotes` is created at runtime by `GameServer`; do not declare it in `default.project.json`.
 
 ## Rules summary
 - Leader HP 30, win by reducing the opponent leader to 0
 - 5 points per turn, banking cap 15, skip (spend nothing) to bank
+- Starting hand 3, draw 2 per turn, max hand 5, 3 field slots
 - Gate slot: 1 point discount, outcome rolled at start of next turn
 - Fatigue when deck is empty: leader loses 1, 2, 3... HP
+- Keywords: Rush, Taunt, Necro, Unlucky, Steal. Elements: Sati > Biao > Muen > Sati, Gawa = coin flip
 
 ## Gate outcomes
 Golden 5% x3 / Pumped 20% x1.5 / Normal 45% x1 / Droopy 20% x0.5 / Poop 10% (HP 1, ATK 0)
 
-## TODO
-CardData, GachaService (with pity and published drop rates), DataService (ProfileStore),
-CardEffects (Spell/Weapon/Shield), Attack remote, client UI/VFX, MatchEnded/GateRolled remotes.
+## Done
+Bot match, PvP queue, spells (7), weapons, 3 leaders, rewards + streak bounty, DataService, CardValidator, event log UI.
+
+## TODO (next batches)
+Gacha + pity, deck builder, quests, Tower, Ranked, Tournament, weather, emotes, pets, titles,
+spectator, replay, black market, Gawa Pass, leaderboard, report.
+Before launch: swap DataService for ProfileStore, add anti-farming for PvP gems.
 
 ## Rojo setup
 1. Install Rojo (CLI + Studio plugin), see https://rojo.space/docs
 2. `git clone https://github.com/xraze09-byte/Roblox.git && cd Roblox`
 3. `rojo serve`
 4. In Studio: Plugins > Rojo > Connect
+5. Press Play: Output should show `[CardValidator] ✅`

@@ -1,23 +1,30 @@
+-- ServerStorage/Modules/GateRNG (ModuleScript)
 local GateRNG = {}
 
-local OUTCOMES = {
+GateRNG.Outcomes = {
 	{ id = "Golden", weight = 5,  mult = 3   },
 	{ id = "Pumped", weight = 20, mult = 1.5 },
 	{ id = "Normal", weight = 45, mult = 1   },
 	{ id = "Droopy", weight = 20, mult = 0.5 },
 	{ id = "Poop",   weight = 10, mult = 0   },
 }
+local byId = {}
+for _, o in GateRNG.Outcomes do byId[o.id] = o end
 local rng = Random.new()
 
 function GateRNG.Roll()
 	local total = 0
-	for _, o in OUTCOMES do total += o.weight end
+	for _, o in GateRNG.Outcomes do total += o.weight end
 	local r = rng:NextNumber(0, total)
-	for _, o in OUTCOMES do
+	for _, o in GateRNG.Outcomes do
 		r -= o.weight
 		if r <= 0 then return o end
 	end
-	return OUTCOMES[#OUTCOMES]
+	return GateRNG.Outcomes[#GateRNG.Outcomes]
+end
+
+function GateRNG.Get(id)
+	return byId[id]
 end
 
 function GateRNG.Apply(card, outcome)
@@ -27,6 +34,7 @@ function GateRNG.Apply(card, outcome)
 		card.HP = math.max(1, math.floor(card.HP * outcome.mult))
 		card.ATK = math.floor(card.ATK * outcome.mult)
 	end
+	card.MaxHP = card.HP
 	card.GateResult = outcome.id
 end
 

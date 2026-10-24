@@ -1,5 +1,4 @@
 -- ไฟล์ลูกของ UIClient: MatchUI (ModuleScript)
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -7,15 +6,19 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIFolder = Shared:WaitForChild("UI")
 local Config = require(Shared:WaitForChild("Config"))
+local Rules = require(Shared:WaitForChild("Rules"))
 local Theme = require(UIFolder:WaitForChild("Theme"))
 local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local CardView = require(UIFolder:WaitForChild("CardView"))
 local GateRoller = require(script.Parent:WaitForChild("GateRoller"))
-local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
-local player = Players.LocalPlayer
+local RemoteFolder = ReplicatedStorage:WaitForChild("Remotes")
+local R = {}
+for _, name in { "PlayCard", "Attack", "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify" } do
+	R[name] = RemoteFolder:WaitForChild(name)
+end
+
 local CENTER = Vector2.new(0.5, 0.5)
-
 local ERR = {
 	NOT_YOUR_TURN = "ยังไม่ถึงตาคุณ ใจเย็นๆ",
 	NOT_ENOUGH_POINTS = "พอยต์ไม่พอ! ลองดองไว้ก่อน",
@@ -24,13 +27,31 @@ local ERR = {
 	CANNOT_ATTACK = "ตัวนี้ยังตีไม่ได้ (หลับอยู่ 💤)",
 	TAUNT = "ต้องตีตัวบังก่อน! 🛡️",
 	INVALID_CARD = "ใช้การ์ดใบนี้ไม่ได้",
-	INVALID_TARGET = "ตีเป้าหมายนี้ไม่ได้",
+	INVALID_TARGET = "เลือกเป้าหมายนี้ไม่ได้",
+	NEED_TARGET = "ต้องเลือกเป้าหมายก่อน",
+	MATCH_OVER = "แมตช์จบไปแล้ว",
+	NO_MATCH = "ไม่ได้อยู่ในแมตช์",
+	SLOW_DOWN = "กดรัวไป ใจเย็นๆ",
+	SERVER_ERROR = "เซิร์ฟเวอร์กาว ลองใหม่อีกที",
 }
 local REASON = {
 	LEADER_DOWN = "ผู้นำล้มคว่ำ 💥",
 	FATIGUE = "การ์ดหมดกองจนหมดแรง 😵",
 	AFK_LIGHTNING = "AFK จนโดนฟ้าผ่า ⚡",
 	LEFT = "อีกฝั่งหนีออกจากเกม 🏃",
+	SURRENDER = "มีคนยอมแพ้ 🏳️",
+}
+local TARGET_RULES = {
+	EnemyChar = { oppField = true },
+	AllyChar = { myField = true },
+	Ally = { myField = true, myLeader = true },
+	Weapon = { myField = true, oppField = true, oppLeader = true },
+}
+local TARGET_HINT = {
+	EnemyChar = "เลือกตัวละครศัตรู 🎯",
+	AllyChar = "เลือกตัวละครฝั่งเรา 💪",
+	Ally = "เลือกตัวละครเราหรือผู้นำเรา 💚",
+	Weapon = "แตะตัวเรา = สวม / แตะศัตรู = ปาใส่ 🗡️",
 }
 local CARD_SIZE = {
 	hand = UDim2.fromScale(0.19, 1),
@@ -45,10 +66,7 @@ local ui = {}
 local views = { hand = {}, myField = {}, oppField = {}, myGate = {} }
 local state, selected, endedMatchId
 local busy = false
-
-local function hasKeyword(card, kw)
-	return card.Keywords ~= nil and table.find(card.Keywords, kw) ~= nil
-end
+local logCounter = 0
 
 -- ─────────── ส่วนประกอบหน้าจอ ───────────
 local function zone(name, position, size, opts)
@@ -76,20 +94,21 @@ local function gateZone(position)
 end
 
 local function pileLabel(position)
-	return UIKit.label({ Font = Theme.FontBody, Size = UDim2.fromScale(0.15, 0.05), Position = position, AnchorPoint = CENTER, Parent = gui })
+	return UIKit.label({ Font = Theme.FontBody, Size = UDim2.fromScale(0.17, 0.045), Position = position, AnchorPoint = CENTER, Parent = gui })
 end
 
-local function leaderBar(position, anchor, isOpp)
-	local props = {
-		Position = position, AnchorPoint = anchor, Size = UDim2.fromScale(0.2, 0.09),
-		BackgroundColor3 = Theme.Color.Panel, Parent = gui,
-	}
-	if isOpp then props.Text = ""; props.AutoButtonColor = false end
+local function leaderBar(position, anchor)
 	local stroke = UIKit.stroke(nil, 4)
-	local root = UIKit.new(isOpp and "TextButton" or "Frame", props, { UIKit.corner(), stroke })
+	local root = UIKit.new("TextButton", {
+		Position = position, AnchorPoint = anchor, Size = UDim2.fromScale(0.2, 0.09),
+		BackgroundColor3 = Theme.Color.Panel, Text = "", AutoButtonColor = false, Parent = gui,
+	}, { UIKit.corner(), stroke })
 	local name = UIKit.label({
 		Color = Theme.Color.Outline, StrokeThickness = 0, AlignX = Enum.TextXAlignment.Left,
-		Size = UDim2.fromScale(0.9, 0.4), Position = UDim2.fromScale(0.05, 0.06), Parent = root,
+		Size = UDim2.fromScale(0.68, 0.4), Position = UDim2.fromScale(0.05, 0.06), Parent = root,
+	})
+	local shield = UIKit.label({
+		Size = UDim2.fromScale(0.25, 0.4), Position = UDim2.fromScale(0.95, 0.06), AnchorPoint = Vector2.new(1, 0), Parent = root,
 	})
 	local track = UIKit.new("Frame", {
 		Size = UDim2.fromScale(0.9, 0.38), Position = UDim2.fromScale(0.05, 0.52),
@@ -97,12 +116,13 @@ local function leaderBar(position, anchor, isOpp)
 	}, { UIKit.corner(UDim.new(0.5, 0)) })
 	local fill = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Green, Parent = track }, { UIKit.corner(UDim.new(0.5, 0)) })
 	local hp = UIKit.label({ Parent = track })
-	return { Root = root, Stroke = stroke, Name = name, Fill = fill, HP = hp }
+	return { Root = root, Stroke = stroke, Name = name, Shield = shield, Fill = fill, HP = hp }
 end
 
-local function setLeader(bar, name, hp)
+local function setLeader(bar, name, hp, shield)
 	local max = Config.LEADER_HP
 	bar.Name.Text = name or "ผู้นำ"
+	bar.Shield.Text = (shield or 0) > 0 and ("🛡%d"):format(shield) or ""
 	bar.HP.Text = ("❤ %d/%d"):format(math.max(hp, 0), max)
 	bar.Fill.BackgroundColor3 = hp <= 10 and Theme.Color.Red or Theme.Color.Green
 	UIKit.tween(bar.Fill, 0.4, { Size = UDim2.fromScale(math.clamp(hp / max, 0, 1), 1) })
@@ -128,6 +148,27 @@ local function banner(text, color)
 	end)
 end
 
+local function pushLog(text, colorName)
+	logCounter += 1
+	local entry = UIKit.new("Frame", {
+		Size = UDim2.fromScale(1, 0.18), BackgroundColor3 = Theme.Color[colorName] or Theme.Color.Panel,
+		LayoutOrder = logCounter, Parent = ui.log,
+	}, { UIKit.corner(), UIKit.stroke(nil, 2) })
+	UIKit.label({
+		Text = text, Font = Theme.FontBody, Color = Theme.Color.Outline, StrokeThickness = 0,
+		Size = UDim2.fromScale(0.94, 0.8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = entry,
+	})
+	local entries = {}
+	for _, child in ui.log:GetChildren() do
+		if child:IsA("Frame") then table.insert(entries, child) end
+	end
+	table.sort(entries, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+	while #entries > 5 do table.remove(entries, 1):Destroy() end
+	task.delay(5, function()
+		if entry.Parent then entry:Destroy() end
+	end)
+end
+
 -- ─────────── การโต้ตอบ ───────────
 local function call(remote, ...)
 	if busy then return end
@@ -147,13 +188,14 @@ local function call(remote, ...)
 end
 
 local function clearSelection()
-	if selected and selected.view.Frame.Parent then
-		selected.view:SetSelected(false)
-	end
+	if selected and selected.view.Frame.Parent then selected.view:SetSelected(false) end
 	selected = nil
-	for _, v in pairs(views.oppField) do v:SetTarget(false) end
+	for _, map in { views.myField, views.oppField } do
+		for _, v in pairs(map) do v:SetTarget(false) end
+	end
+	ui.myLeader.Stroke.Color = Theme.Color.Outline
 	ui.oppLeader.Stroke.Color = Theme.Color.Outline
-	for _, child in ipairs(ui.actions:GetChildren()) do
+	for _, child in ui.actions:GetChildren() do
 		if child:IsA("GuiObject") then child:Destroy() end
 	end
 	ui.actions.Visible = false
@@ -165,44 +207,69 @@ local function actionButton(text, color, width, disabled, onClick)
 	if disabled then UIKit.setDisabled(btn, true) end
 end
 
-local function playCard(uid, target)
-	for i, c in ipairs(state.myHand) do
-		if c.Uid == uid then
-			UIKit.sfx("PlayCard")
-			clearSelection()
-			call(Remotes.PlayCard, i, target)
-			return
+local function hint(text)
+	local lbl = UIKit.label({ Text = text, Size = UDim2.fromScale(0.5, 1), Parent = ui.actions })
+	lbl.LayoutOrder = 0
+end
+
+local function highlight(rule)
+	local count = 0
+	for zoneName, map in { myField = views.myField, oppField = views.oppField } do
+		for _, v in pairs(map) do
+			local ok = rule[zoneName] == true
+			v:SetTarget(ok)
+			if ok then count += 1 end
 		end
 	end
+	ui.myLeader.Stroke.Color = rule.myLeader and Theme.Color.Red or Theme.Color.Outline
+	ui.oppLeader.Stroke.Color = rule.oppLeader and Theme.Color.Red or Theme.Color.Outline
+	if rule.myLeader then count += 1 end
+	if rule.oppLeader then count += 1 end
+	return count
+end
+
+local function playCard(uid, target)
+	UIKit.sfx("PlayCard")
+	clearSelection()
+	call(R.PlayCard, uid, target)
 end
 
 local function doAttack(targetUid)
-	if not selected or selected.zone ~= "myField" then return end
+	if not selected or selected.mode ~= "attack" then return end
 	local attacker = selected.view
 	clearSelection()
 	attacker:Lunge()
 	UIKit.sfx("Swing")
-	call(Remotes.Attack, attacker.Card.Uid, targetUid)
+	call(R.Attack, attacker.Card.Uid, targetUid)
 end
 
 local function selectHand(view)
 	clearSelection()
 	local card = view.Card
 	local myTurn = state.isMyTurn
-	selected = { zone = "hand", view = view }
+	local tt = Rules.TargetType(card)
+	selected = { mode = "hand", view = view }
 	view:SetSelected(true)
-	if card.Type == "Character" then
-		local gateCost = math.max(0, card.Cost - Config.GATE_DISCOUNT)
+
+	if tt == "Board" then
+		local gateCost = Rules.GateCost(card)
 		actionButton(("ลงสนาม ⚡%d"):format(card.Cost), Theme.Color.Yellow, 0.32,
 			not myTurn or #state.myField >= Config.FIELD_SLOTS or card.Cost > state.myPoints,
 			function() playCard(card.Uid, "Field") end)
 		actionButton(("ลงเกต 🎲 ⚡%d"):format(gateCost), Theme.Color.Pink, 0.32,
 			not myTurn or state.myGate ~= nil or gateCost > state.myPoints,
 			function() playCard(card.Uid, "Gate") end)
-	else
+	elseif tt == "None" then
 		actionButton(("ใช้การ์ด ⚡%d"):format(card.Cost), Theme.Color.Blue, 0.4,
 			not myTurn or card.Cost > state.myPoints,
-			function() playCard(card.Uid, "Field") end)
+			function() playCard(card.Uid, nil) end)
+	elseif myTurn and card.Cost <= state.myPoints then
+		selected.mode = "target"
+		selected.rule = TARGET_RULES[tt] or {}
+		local count = highlight(selected.rule)
+		hint(count > 0 and (TARGET_HINT[tt] or "เลือกเป้าหมาย") or "ไม่มีเป้าหมายให้เลือก 😅")
+	else
+		actionButton(("ใช้การ์ด ⚡%d"):format(card.Cost), Theme.Color.Blue, 0.4, true, nil)
 	end
 	actionButton("ยกเลิก", Theme.Color.Gray, 0.2, false, clearSelection)
 	ui.actions.Visible = true
@@ -210,18 +277,14 @@ end
 
 local function selectAttacker(view)
 	clearSelection()
-	selected = { zone = "myField", view = view }
+	selected = { mode = "attack", view = view }
 	view:SetSelected(true)
-	local tauntUp = false
-	for _, c in ipairs(state.oppField) do
-		if hasKeyword(c, "Taunt") then tauntUp = true break end
-	end
+	local tauntUp = Rules.HasTaunt(state.oppField)
 	for _, v in pairs(views.oppField) do
-		v:SetTarget(not tauntUp or hasKeyword(v.Card, "Taunt"))
+		v:SetTarget(not tauntUp or Rules.HasKeyword(v.Card, "Taunt"))
 	end
-	if not tauntUp then ui.oppLeader.Stroke.Color = Theme.Color.Red end
-	local hint = UIKit.label({ Text = tauntUp and "มีตัวบัง! ต้องตีมันก่อน 🛡️" or "เลือกเป้าหมายเลย 👊", Size = UDim2.fromScale(0.5, 1), Parent = ui.actions })
-	hint.LayoutOrder = 0
+	ui.oppLeader.Stroke.Color = tauntUp and Theme.Color.Outline or Theme.Color.Red
+	hint(tauntUp and "มีตัวบัง! ต้องตีมันก่อน 🛡️" or "เลือกเป้าหมายเลย 👊")
 	actionButton("ยกเลิก", Theme.Color.Gray, 0.2, false, clearSelection)
 	ui.actions.Visible = true
 end
@@ -230,21 +293,45 @@ local function onCardClick(zoneName, view)
 	if not state or busy then return end
 	if zoneName == "hand" then
 		if selected and selected.view == view then clearSelection() else selectHand(view) end
-	elseif zoneName == "myField" then
+		return
+	end
+	if selected and selected.mode == "target" then
+		if selected.rule[zoneName] then
+			playCard(selected.view.Card.Uid, view.Card.Uid)
+		else
+			UIKit.toast(ERR.INVALID_TARGET, Theme.Color.Red)
+		end
+		return
+	end
+	if selected and selected.mode == "attack" and zoneName == "oppField" then
+		doAttack(view.Card.Uid)
+		return
+	end
+	if zoneName == "myField" then
 		if selected and selected.view == view then clearSelection() return end
 		if not state.isMyTurn then UIKit.toast(ERR.NOT_YOUR_TURN) return end
 		if not view.Card.CanAttack or (view.Card.ATK or 0) <= 0 then
 			UIKit.shake(view.Body)
-			UIKit.toast(ERR.CANNOT_ATTACK)
+			UIKit.toast(view.Card.Frozen and "แข็งเป็นน้ำแข็งอยู่ ❄️" or ERR.CANNOT_ATTACK)
 			return
 		end
 		selectAttacker(view)
-	elseif zoneName == "oppField" then
-		doAttack(view.Card.Uid)
 	end
 end
 
--- ซูมดูการ์ด (คลิกขวาบน PC / กดค้างบนมือถือ)
+local function onLeaderClick(which)
+	if not state or busy or not selected then return end
+	if selected.mode == "target" then
+		if selected.rule[which] then
+			playCard(selected.view.Card.Uid, which == "myLeader" and "MY_LEADER" or "LEADER")
+		else
+			UIKit.toast(ERR.INVALID_TARGET, Theme.Color.Red)
+		end
+	elseif selected.mode == "attack" and which == "oppLeader" then
+		doAttack("LEADER")
+	end
+end
+
 local function inspect(card)
 	local dim = UIKit.new("TextButton", {
 		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.4,
@@ -267,7 +354,21 @@ local function endTurn()
 	if not state or not state.isMyTurn or busy then return end
 	clearSelection()
 	UIKit.setDisabled(ui.endBtn, true)
-	Remotes.EndTurn:FireServer()
+	R.EndTurn:FireServer()
+	task.delay(2, function() -- กันปุ่มค้าง ถ้าเซิร์ฟเวอร์ไม่ตอบ
+		if state and state.isMyTurn then UIKit.setDisabled(ui.endBtn, false) end
+	end)
+end
+
+local surrenderArmed = 0
+local function surrender()
+	if not state then return end
+	if os.clock() - surrenderArmed > 3 then
+		surrenderArmed = os.clock()
+		UIKit.toast("กดอีกครั้งภายใน 3 วิ เพื่อยืนยันยอมแพ้ 🏳️")
+		return
+	end
+	R.Surrender:FireServer()
 end
 
 local lastPray = 0
@@ -286,9 +387,7 @@ local function pray()
 	})
 	UIKit.label({ Text = "🙏 สาธุ~ ขอให้เกตออกทอง", Size = UDim2.fromScale(0.8, 0.12), Position = UDim2.fromScale(0.5, 0.8), AnchorPoint = CENTER, Parent = beam })
 	UIKit.tween(beam, 0.4, { BackgroundTransparency = 0.3 })
-	task.delay(2, function()
-		beam:Destroy()
-	end)
+	task.delay(2, function() beam:Destroy() end)
 end
 
 -- ─────────── วาดสถานะเกม ───────────
@@ -333,6 +432,7 @@ end
 
 local function render(s)
 	local first = state == nil
+	local keepUid = selected and selected.mode ~= "attack" and selected.view.Card.Uid
 	state = s
 	if first then
 		gui.Enabled = true
@@ -351,7 +451,7 @@ local function render(s)
 	fanHand()
 
 	ui.oppGateBack.Visible = s.oppGateFilled == true
-	for _, child in ipairs(ui.oppHand:GetChildren()) do
+	for _, child in ui.oppHand:GetChildren() do
 		if child:IsA("Frame") then child:Destroy() end
 	end
 	for i = 1, s.oppHandCount or 0 do
@@ -360,10 +460,12 @@ local function render(s)
 		back.Parent = ui.oppHand
 	end
 
-	setLeader(ui.myLeader, s.myLeader, s.myHP)
-	setLeader(ui.oppLeader, s.oppLeader, s.oppHP)
+	setLeader(ui.myLeader, s.myLeader, s.myHP, s.myShield)
+	setLeader(ui.oppLeader, s.oppLeader, s.oppHP, s.oppShield)
 	ui.myPile.Text = ("🂠 %d   💀 %d"):format(s.myDeck or 0, s.myGrave or 0)
-	ui.oppPile.Text = ("🂠 %d   💀 %d"):format(s.oppDeck or 0, s.oppGrave or 0)
+	ui.oppPile.Text = ("🂠 %d   💀 %d%s"):format(s.oppDeck or 0, s.oppGrave or 0,
+		(s.oppBank or 0) > 0 and ("   💰ดอง %d"):format(s.oppBank) or "")
+	ui.bombText = (s.bombs and #s.bombs > 0) and ("   💣 " .. table.concat(s.bombs, ", ")) or ""
 
 	local pointsText = "⚡" .. s.myPoints
 	if ui.points.Text ~= pointsText then UIKit.jelly(ui.pointsBubble, 0.3) end
@@ -377,6 +479,8 @@ local function render(s)
 		ui.endLabel.Text = "รอศัตรู... ⏳"
 		UIKit.setDisabled(ui.endBtn, true)
 	end
+
+	if keepUid and views.hand[keepUid] then selectHand(views.hand[keepUid]) end
 end
 
 local function reset()
@@ -386,12 +490,18 @@ local function reset()
 			map[uid] = nil
 		end
 	end
+	for _, child in ui.log:GetChildren() do
+		if child:IsA("Frame") then child:Destroy() end
+	end
 	state, selected, ui.lastTurn = nil, nil, nil
 	ui.myLeader.Value, ui.oppLeader.Value = nil, nil
+	ui.resultOpen = false
 	gui.Enabled = false
 end
 
-local function showResult(won, reason)
+local function showResult(won, reason, gems)
+	if ui.resultOpen then return end
+	ui.resultOpen = true
 	local dim = UIKit.new("Frame", {
 		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
 		BackgroundTransparency = 0.3, Active = true, Parent = overlay,
@@ -400,14 +510,15 @@ local function showResult(won, reason)
 	UIKit.rain(dim, won and "🏆" or "🧂", 30)
 	local title = UIKit.label({
 		Text = won and "ชนะ! 🏆" or "แพ้... เกลือเต็มปาก 🧂", Color = won and Theme.Color.Yellow or Theme.Color.Gray,
-		Size = UDim2.fromScale(0.8, 0.2), Position = UDim2.fromScale(0.5, 0.3), AnchorPoint = CENTER,
+		Size = UDim2.fromScale(0.8, 0.2), Position = UDim2.fromScale(0.5, 0.28), AnchorPoint = CENTER,
 		Parent = dim, MaxTextSize = 120, StrokeThickness = 5,
 	})
 	UIKit.jelly(title, 0.5)
-	UIKit.label({ Text = REASON[reason] or tostring(reason or ""), Size = UDim2.fromScale(0.6, 0.07), Position = UDim2.fromScale(0.5, 0.47), AnchorPoint = CENTER, Parent = dim })
+	UIKit.label({ Text = REASON[reason] or tostring(reason or ""), Size = UDim2.fromScale(0.6, 0.07), Position = UDim2.fromScale(0.5, 0.44), AnchorPoint = CENTER, Parent = dim })
+	UIKit.label({ Text = ("+%d 💎"):format(gems or 0), Color = Theme.Color.Blue, Size = UDim2.fromScale(0.4, 0.08), Position = UDim2.fromScale(0.5, 0.53), AnchorPoint = CENTER, Parent = dim })
 	UIKit.button({
 		Text = "กลับล็อบบี้", Color = Theme.Color.Green, Size = UDim2.fromScale(0.25, 0.1),
-		Position = UDim2.fromScale(0.5, 0.65), AnchorPoint = CENTER, Parent = dim,
+		Position = UDim2.fromScale(0.5, 0.68), AnchorPoint = CENTER, Parent = dim,
 		OnClick = function()
 			dim:Destroy()
 			reset()
@@ -421,7 +532,7 @@ local function updateTimer()
 	local left = math.max(0, math.ceil(state.turnEndsAt - workspace:GetServerTimeNow()))
 	ui.timerFill.Size = UDim2.fromScale(left / Config.TURN_TIME, 1)
 	ui.timerFill.BackgroundColor3 = left <= 20 and Theme.Color.Red or Theme.Color.Yellow
-	ui.timerText.Text = ("%s %d:%02d"):format(state.isMyTurn and "ตาคุณ" or "ตาศัตรู", left // 60, left % 60)
+	ui.timerText.Text = ("%s %d:%02d%s"):format(state.isMyTurn and "ตาคุณ" or "ตาศัตรู", left // 60, left % 60, ui.bombText or "")
 end
 
 local NUM_KEYS = {
@@ -446,13 +557,16 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	gui, overlay, callbacks = matchGui, overlayGui, cb or {}
 	gui.Enabled = false
 
-	UIKit.new("Frame", { Name = "TableBg", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Table, Parent = gui }, {
+	UIKit.new("Frame", {
+		Name = "TableBg", Size = UDim2.new(1, 0, 1, 200), Position = UDim2.fromOffset(0, -100),
+		BackgroundColor3 = Theme.Color.Table, Active = true, ZIndex = 0, Parent = gui,
+	}, {
 		UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 150, 150)) }),
 	})
 
 	-- ฝั่งศัตรู
-	ui.oppLeader = leaderBar(UDim2.fromScale(0.98, 0.02), Vector2.new(1, 0), true)
-	ui.oppLeader.Root.Activated:Connect(function() doAttack("LEADER") end)
+	ui.oppLeader = leaderBar(UDim2.fromScale(0.98, 0.02), Vector2.new(1, 0))
+	ui.oppLeader.Root.Activated:Connect(function() onLeaderClick("oppLeader") end)
 	ui.oppHand = zone("OppHand", UDim2.fromScale(0.5, 0.015), UDim2.fromScale(0.3, 0.1), { Transparency = 1 })
 	ui.oppField = zone("OppField", UDim2.fromScale(0.5, 0.13), UDim2.fromScale(0.62, 0.22))
 	ui.oppGate = gateZone(UDim2.fromScale(0.89, 0.13))
@@ -460,7 +574,23 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	ui.oppGateBack.LayoutOrder = 1
 	ui.oppGateBack.Visible = false
 	ui.oppGateBack.Parent = ui.oppGate
-	ui.oppPile = pileLabel(UDim2.fromScale(0.1, 0.24))
+	ui.oppPile = pileLabel(UDim2.fromScale(0.1, 0.15))
+
+	UIKit.button({
+		Text = "🏳️ ยอมแพ้", Color = Theme.Color.Gray, Size = UDim2.fromScale(0.1, 0.06),
+		Position = UDim2.fromScale(0.01, 0.02), Parent = gui, OnClick = surrender,
+	})
+
+	-- ประวัติเหตุการณ์
+	ui.log = UIKit.new("Frame", {
+		Size = UDim2.fromScale(0.17, 0.27), Position = UDim2.fromScale(0.01, 0.2),
+		BackgroundTransparency = 1, Parent = gui,
+	}, {
+		UIKit.new("UIListLayout", {
+			VerticalAlignment = Enum.VerticalAlignment.Bottom, SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0.02, 0),
+		}),
+	})
 
 	-- ตัวจับเวลา
 	local track = UIKit.new("Frame", {
@@ -468,12 +598,12 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 		BackgroundColor3 = Color3.fromRGB(30, 60, 40), Parent = gui,
 	}, { UIKit.corner(UDim.new(0.5, 0)) })
 	ui.timerFill = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Yellow, Parent = track }, { UIKit.corner(UDim.new(0.5, 0)) })
-	ui.timerText = UIKit.label({ Size = UDim2.fromScale(0.3, 1.6), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = track })
+	ui.timerText = UIKit.label({ Size = UDim2.fromScale(0.5, 1.6), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = track })
 
 	-- ฝั่งเรา
 	ui.myField = zone("MyField", UDim2.fromScale(0.5, 0.40), UDim2.fromScale(0.62, 0.22))
 	ui.myGate = gateZone(UDim2.fromScale(0.89, 0.40))
-	ui.myPile = pileLabel(UDim2.fromScale(0.1, 0.51))
+	ui.myPile = pileLabel(UDim2.fromScale(0.1, 0.52))
 	ui.actions = UIKit.new("Frame", {
 		Size = UDim2.fromScale(0.56, 0.06), Position = UDim2.fromScale(0.5, 0.635), AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundTransparency = 1, Visible = false, Parent = gui,
@@ -484,7 +614,8 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 		}),
 	})
 	ui.hand = zone("Hand", UDim2.fromScale(0.5, 0.71), UDim2.fromScale(0.56, 0.28), { Transparency = 1, Padding = UDim.new(-0.01, 0) })
-	ui.myLeader = leaderBar(UDim2.fromScale(0.02, 0.97), Vector2.new(0, 1), false)
+	ui.myLeader = leaderBar(UDim2.fromScale(0.02, 0.97), Vector2.new(0, 1))
+	ui.myLeader.Root.Activated:Connect(function() onLeaderClick("myLeader") end)
 
 	UIKit.button({
 		Text = "🙏 สวดมนต์", Color = Theme.Color.Panel, Size = UDim2.fromScale(0.13, 0.08),
@@ -506,17 +637,20 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	})
 
 	-- รับข้อมูลจากเซิร์ฟเวอร์
-	Remotes.StateUpdate.OnClientEvent:Connect(function(s)
-		if s.matchId and s.matchId == endedMatchId then return end
+	R.StateUpdate.OnClientEvent:Connect(function(s)
+		if typeof(s) ~= "table" or (s.matchId and s.matchId == endedMatchId) then return end
 		render(s)
 	end)
-	Remotes.GateRolled.OnClientEvent:Connect(function(userId, card, outcomeId)
-		if state then GateRoller.Play(overlay, card, outcomeId, userId == player.UserId) end
+	R.GateRolled.OnClientEvent:Connect(function(isMine, card, outcomeId)
+		if state then GateRoller.Play(overlay, card, outcomeId, isMine) end
 	end)
-	Remotes.MatchEnded.OnClientEvent:Connect(function(winnerId, reason, matchId)
+	R.Notify.OnClientEvent:Connect(function(text, color)
+		if state then pushLog(tostring(text), color) end
+	end)
+	R.MatchEnded.OnClientEvent:Connect(function(won, reason, matchId, gems)
 		endedMatchId = matchId
-		clearSelection()
-		showResult(winnerId == player.UserId, reason)
+		if state then clearSelection() end
+		showResult(won, reason, gems)
 	end)
 	RunService.Heartbeat:Connect(updateTimer)
 	UserInputService.InputBegan:Connect(onKey)

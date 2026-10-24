@@ -13,18 +13,24 @@ pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) 
 
 local function screen(name, order)
 	return UIKit.new("ScreenGui", {
-		Name = name, DisplayOrder = order, IgnoreGuiInset = true,
-		ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = playerGui,
+		Name = name, DisplayOrder = order, ResetOnSpawn = false,
+		ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets, -- ไม่ทับปุ่มของ Roblox
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = playerGui,
 	})
 end
 
 local hud = screen("LobbyHUD", 1)
 local match = screen("MatchUI", 5)
-local overlay = screen("Overlay", 10) -- แจ้งเตือน, ป๊อปอัป, วงล้อเกต
+local overlay = screen("Overlay", 10)
 UIKit.toastParent = overlay
 
 LobbyUI.Build(hud, overlay)
 MatchUI.Build(match, overlay, {
-	OnStart = function() hud.Enabled = false end,
-	OnExit = function() hud.Enabled = true end,
+	OnStart = function()
+		hud.Enabled = false
+		LobbyUI.ResetQueue()
+	end,
+	OnExit = function()
+		hud.Enabled = true
+	end,
 })

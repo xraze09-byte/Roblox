@@ -20,8 +20,6 @@ local function describe(card)
 			table.insert(words, Theme.Keyword[kw] or kw)
 		end
 		if #words > 0 then return table.concat(words, " • ") end
-	elseif card.Type == "Weapon" then
-		return ("ATK +%d / ปาใส่ %d"):format(card.Bonus or 0, card.Bonus or 0)
 	end
 	return card.Desc or card.Flavor or ""
 end
@@ -94,6 +92,10 @@ function CardView.new(card, opts)
 	}, { UIKit.corner(UDim.new(0.08, 0)), UIKit.stroke(nil, 2) })
 	self.Icon = UIKit.label({ Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = self.Art, StrokeThickness = 0, MaxTextSize = 100 })
 	self.Sleep = UIKit.label({ Text = "💤", Size = UDim2.fromScale(0.35, 0.35), Position = UDim2.fromScale(0.98, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = self.Art, StrokeThickness = 0 })
+	self.Status = UIKit.label({
+		Text = "", Size = UDim2.fromScale(0.95, 0.24), Position = UDim2.fromScale(0.5, 0.98),
+		AnchorPoint = Vector2.new(0.5, 1), Parent = self.Art, StrokeThickness = 1,
+	})
 
 	UIKit.label({
 		Text = card.Name or "???", Color = Theme.Color.Outline, StrokeThickness = 0,
@@ -136,6 +138,11 @@ function CardView:Update(card)
 	self.Icon.Text = TYPE_ICON[card.Type] or "❓"
 	self.Icon.Visible = not art
 	self.Sleep.Visible = self.ShowSleep == true and card.Type == "Character" and not card.CanAttack
+	local status = {}
+	if card.Frozen then table.insert(status, "❄️") end
+	if card.Slime then table.insert(status, "🟢") end
+	if card.WeaponName then table.insert(status, "🗡️" .. tostring(card.WeaponDur or 0)) end
+	self.Status.Text = table.concat(status, " ")
 
 	self.Gradient.Enabled = card.GateResult == "Golden"
 	if card.GateResult == "Poop" then
