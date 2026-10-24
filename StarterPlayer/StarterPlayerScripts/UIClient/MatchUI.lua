@@ -180,9 +180,12 @@ local function call(remote, ...)
 		end)
 		busy = false
 		if not ok then
+			warn("[MatchUI] InvokeServer error: " .. tostring(success))
 			UIKit.toast("เน็ตกาว ลองใหม่อีกที 📶", Theme.Color.Red)
 		elseif not success then
-			UIKit.toast(ERR[err] or "ทำแบบนี้ไม่ได้นะ", Theme.Color.Red)
+			-- แสดงรหัสดิบเพื่อหาสาเหตุ (ถ้าไม่มีรหัสแปลว่าเซิร์ฟเวอร์ไม่ได้ตอบมาตามรูปแบบ)
+			warn(("[MatchUI] %s ถูกปฏิเสธ: success=%s err=%s"):format(remote.Name, tostring(success), tostring(err)))
+			UIKit.toast(ERR[err] or ("ทำแบบนี้ไม่ได้ [" .. tostring(err) .. "]"), Theme.Color.Red)
 		end
 	end)
 end

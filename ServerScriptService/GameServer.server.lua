@@ -129,7 +129,10 @@ local function guarded(player, method, ...)
 		warn(("[GameServer] %s error: %s"):format(method, tostring(a)))
 		return false, "SERVER_ERROR"
 	end
-	return a, b
+	if a ~= true then
+		warn(("[GameServer] %s ปฏิเสธ %s: %s"):format(method, player.Name, tostring(b)))
+	end
+	return a == true, b
 end
 
 -- 4) Remotes
