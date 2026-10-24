@@ -1,0 +1,67 @@
+{
+  "name": "GawaCardBattle",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "ReplicatedStorage/Shared"
+      },
+      "Remotes": {
+        "$className": "Folder",
+        "PlayCard": {
+          "$className": "RemoteFunction"
+        },
+        "Attack": {
+          "$className": "RemoteFunction"
+        },
+        "EndTurn": {
+          "$className": "RemoteEvent"
+        },
+        "StateUpdate": {
+          "$className": "RemoteEvent"
+        },
+        "GateRolled": {
+          "$className": "RemoteEvent"
+        },
+        "MatchEnded": {
+          "$className": "RemoteEvent"
+        },
+        "PlayEmote": {
+          "$className": "RemoteEvent"
+        },
+        "Pray": {
+          "$className": "RemoteEvent"
+        },
+        "ThrowTomato": {
+          "$className": "RemoteEvent"
+        },
+        "SendSticker": {
+          "$className": "RemoteEvent"
+        },
+        "GachaRoll": {
+          "$className": "RemoteFunction"
+        },
+        "SaveDeck": {
+          "$className": "RemoteFunction"
+        },
+        "ClaimQuest": {
+          "$className": "RemoteFunction"
+        },
+        "ReportPlayer": {
+          "$className": "RemoteEvent"
+        }
+      }
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Modules": {
+        "$path": "ServerStorage/Modules"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$path": "ServerScriptService"
+    }
+  }
+}

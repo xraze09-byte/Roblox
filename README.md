@@ -22,3 +22,9 @@ Golden 5% x3 / Pumped 20% x1.5 / Normal 45% x1 / Droopy 20% x0.5 / Poop 10% (HP 
 ## TODO
 CardData, GachaService (with pity and published drop rates), DataService (ProfileStore),
 CardEffects (Spell/Weapon/Shield), Attack remote, client UI/VFX, MatchEnded/GateRolled remotes.
+
+## Rojo setup
+1. Install Rojo (CLI + Studio plugin), see https://rojo.space/docs
+2. `git clone https://github.com/xraze09-byte/Roblox.git && cd Roblox`
+3. `rojo serve`
+4. In Studio: Plugins > Rojo > Connect
