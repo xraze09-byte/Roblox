@@ -54,7 +54,7 @@ local LobbyUI = {}
 
 local TAB_COLOR = { Battle = S.C.Bad, Deck = S.C.Info, Gacha = S.C.Pink, Quests = S.C.Good, Stats = S.C.Violet, Fun = S.C.Teal }
 local TABS = {
-	{ Id = "Battle", Text = "ต่อสู้" }, { Id = "Deck", Text = "เด็ค" }, { Id = "Gacha", Text = "กาชา" },
+	{ Id = "Deck", Text = "เด็ค" }, { Id = "Gacha", Text = "กาชา" },
 	{ Id = "Quests", Text = "เควสต์" }, { Id = "Stats", Text = "สถิติ" }, { Id = "Fun", Text = "สนุก" },
 }
 -- สีประจำผู้นำ (เดิมทุกใบเป็นสีเทาเหมือนกันหมด)
@@ -77,55 +77,40 @@ function LobbyUI.Build(hud, overlay)
 	local leaderIndex, queueMode, queueElapsed = 1, nil, 0
 	local currentTab = "Battle"
 	local panels = {}
-	local statusLabel = nil
 
-	-- ===== พื้นหลังทึบเต็มจอ =====
-	local backdrop = S.new("Frame", { Name = "Backdrop", BackgroundColor3 = S.C.Bg, Size = UDim2.fromScale(1, 1), Parent = hud })
-	S.new("Frame", { Name = "BandTop", BackgroundColor3 = S.C.Violet, BackgroundTransparency = 0.8,
-		Size = UDim2.fromScale(1, 0.4), Parent = backdrop })
-	S.new("Frame", { Name = "BandBottom", BackgroundColor3 = S.C.Pink, BackgroundTransparency = 0.88,
-		AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0.3), Parent = backdrop })
+	-- ===== เลย์เอาต์ลอย: ไม่มีพื้นหลังทึบ ไม่มีกรอบรวม =====
+	-- ชิ้นลอยอิสระ: กล่องเพชร (ขวาบน) / ปุ่มเมนู (ซ้ายกลาง) / ปุ่มต่อสู้ (ล่างกลาง)
+	-- หน้าต่างเนื้อหา (panel) เปิดเฉพาะตอนกดเมนู และปิดได้ จอส่วนใหญ่จึงโล่ง
+	local root = S.new("Frame", { Name = "LobbyRoot", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = hud })
 
-	-- ===== โครงหลัก: คอลัมน์แนวตั้ง [แถบบน | เนื้อหา(กินที่เหลือ)] =====
-	local root = S.new("Frame", { Name = "LobbyRoot", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = backdrop }, {
-		S.pad(12),
-		S.new("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
-	})
-
-	local topBar = S.new("Frame", { Name = "TopBar", BackgroundColor3 = S.C.Panel, LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 46), Parent = root }, { S.corner(8), S.pad(6) })
-	S.stroke(S.C.Violet, 1.5, topBar)
-	S.text({ Font = S.Font.Heavy, Text = "GAWA CARDS", Color = S.C.Accent, Max = 26,
-		Size = UDim2.new(0.5, 0, 1, 0), Parent = topBar })
-	local gemBox = S.new("Frame", { BackgroundColor3 = S.C.Ink, AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.fromScale(1, 0.5), Size = UDim2.new(0, 150, 1, 0), Parent = topBar }, { S.corner(6) })
+	local gemBox = S.new("Frame", { Name = "GemBox", BackgroundColor3 = S.C.Panel, AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 12), Size = UDim2.fromOffset(150, 38), ZIndex = 5, Parent = root }, { S.corner(8) })
 	S.stroke(S.C.Accent, 1.5, gemBox)
-	local gemLabel = S.text({ Font = S.Font.Bold, Color = S.C.Accent, Max = 18, XAlign = "Center", Parent = gemBox })
+	local gemLabel = S.text({ Font = S.Font.Bold, Color = S.C.Accent, Max = 18, XAlign = "Center", ZIndex = 6, Parent = gemBox })
 
-	-- แถวเนื้อหา: [เมนูซ้าย | แผงขวา(กินที่เหลือ)] เรียงแนวนอน
-	local body = S.new("Frame", { Name = "Body", BackgroundTransparency = 1, LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 1, -56), Parent = root }, {
-		S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10),
-			SortOrder = Enum.SortOrder.LayoutOrder }),
-	})
-
-	local menu = S.new("Frame", { Name = "Menu", BackgroundTransparency = 1, LayoutOrder = 1,
-		Size = UDim2.new(0, 140, 1, 0), Parent = body }, {
+	local menu = S.new("Frame", { Name = "Menu", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 12, 0.5, 0), Size = UDim2.fromOffset(120, 5 * 42), ZIndex = 5, Parent = root }, {
 		S.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
 	})
 
-	local panel = S.new("Frame", { Name = "Panel", BackgroundColor3 = S.C.Panel, LayoutOrder = 2,
-		Size = UDim2.new(1, -150, 1, 0), Parent = body }, { S.corner(8), S.pad(10) })
+	-- หน้าต่างเนื้อหา: ซ่อนเป็นค่าเริ่มต้น เปิดเมื่อกดเมนู
+	local panel = S.new("Frame", { Name = "Panel", BackgroundColor3 = S.C.Panel, AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.54, 0.54), Size = UDim2.fromScale(0.62, 0.78), Visible = false, ZIndex = 10, Parent = root },
+		{ S.corner(10), S.pad(10), S.new("UISizeConstraint", { MinSize = Vector2.new(320, 180), MaxSize = Vector2.new(900, 640) }) })
 	S.stroke(S.C.Violet, 2, panel)
+	S.button({ Name = "Close", Text = "X", Max = 18, Color = S.C.Bad, TextColor = S.C.Paper,
+		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -4, 0, 4), Size = UDim2.fromOffset(34, 34), ZIndex = 20, Parent = panel,
+		OnClick = function() if LobbyUI._close then LobbyUI._close() end end })
 
 	-- ===== หน้า: Frame แนวตั้ง [หัวเรื่อง | เนื้อหา] =====
 	local page = nil
 	local function newPage(title)
 		if page then page:Destroy() end
-		page = S.new("Frame", { Name = "Page", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = panel }, {
+		page = S.new("Frame", { Name = "Page", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 11, Parent = panel }, {
 			S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
 		})
-		S.header(page, title, TAB_COLOR[currentTab], 1)
+		local hdr = S.header(page, title, TAB_COLOR[currentTab], 1)
+		hdr.Size = UDim2.new(1, -44, 0, 34) -- เว้นที่ปุ่มปิด
 		local content = S.new("Frame", { Name = "Content", BackgroundTransparency = 1, LayoutOrder = 2,
 			Size = UDim2.new(1, 0, 1, -42), Parent = page })
 		return content
@@ -140,92 +125,132 @@ function LobbyUI.Build(hud, overlay)
 		end
 	end
 
+	local battleDock -- ปุ่มต่อสู้ลอยล่างกลาง (สร้างด้านล่าง)
+	local function closePanel()
+		panel.Visible = false
+		if page then page:Destroy() page = nil end
+		currentTab = "Battle"
+		paintTabs()
+		if battleDock then battleDock.Visible = true end
+	end
+	LobbyUI._close = closePanel
+
 	local function open(id)
+		-- กดแท็บเดิมซ้ำ = ปิดหน้าต่าง
+		if id == currentTab and panel.Visible then closePanel() return end
 		currentTab = id
 		paintTabs()
+		panel.Visible = true
+		if battleDock then battleDock.Visible = false end
 		if panels[id] then panels[id]() end
 	end
 
 	for i, tab in TABS do
 		tabButtons[tab.Id] = S.button({ Text = tab.Text, Max = 16, Color = S.C.Panel2, LayoutOrder = i,
-			Size = UDim2.new(1, 0, 0, 36), Parent = menu, OnClick = function() open(tab.Id) end })
+			Size = UDim2.new(1, 0, 0, 36), ZIndex = 6, Parent = menu, OnClick = function() open(tab.Id) end })
 	end
 
 	local function refreshIfOpen(id)
-		if currentTab == id then panels[id]() end
+		if currentTab == id and panel.Visible then panels[id]() end
 	end
 
-	-- ===== 1) ต่อสู้ =====
-	panels.Battle = function()
-		local c = newPage("เลือกผู้นำและโหมดต่อสู้")
-		S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = c })
+	-- ===== 1) ต่อสู้: ปุ่มลอยล่างกลาง (ไม่มีกรอบรวม ไม่มีหน้าต่าง) =====
+	battleDock = S.new("Frame", { Name = "BattleDock", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.fromOffset(460, 112), ZIndex = 5, Parent = root })
 
-		-- การ์ดผู้นำ 3 ใบ เรียงแนวนอน
-		local row = S.new("Frame", { BackgroundTransparency = 1, LayoutOrder = 1, Size = UDim2.new(1, 0, 1, -(22 + 52 + 16)), Parent = c }, {
-			S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0.02, 0),
-				HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
-				SortOrder = Enum.SortOrder.LayoutOrder }),
-		})
-		for i, id in Decks.Leaders do
-			local card = CardData[id] or {}
-			local st = LEADER_STYLE[id] or { Color = S.C.Accent }
+	local leaderRow = S.new("Frame", { Name = "Leaders", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 48), ZIndex = 5,
+		Parent = battleDock }, {
+		S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8),
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	local leaderBtns = {}
+	local function paintLeaders()
+		for i, b in leaderBtns do
+			local st = LEADER_STYLE[Decks.Leaders[i]] or { Color = S.C.Accent }
 			local picked = i == leaderIndex
-			local tile = S.new("TextButton", { AutoButtonColor = false, Text = "", LayoutOrder = i,
-				BackgroundColor3 = picked and st.Color or S.C.Panel2, Size = UDim2.new(0.31, 0, 1, 0), Parent = row },
-				{ S.corner(8), S.pad(6) })
-			S.stroke(picked and S.C.Paper or st.Color, picked and 3 or 1.5, tile)
-			-- เนื้อหาในการ์ดปรับตามความสูงจริง: เตี้ยก็เหลือแค่ชื่อ ไม่ให้ตัวหนังสือทับกัน
-			local nameL = S.text({ Name = "Name", Font = S.Font.Heavy, Text = card.Name or id,
-				Color = picked and S.C.Ink or S.C.Text, Max = 16, XAlign = "Center", Size = UDim2.fromScale(1, 1), Parent = tile })
-			local descL = S.text({ Name = "Desc", Text = S.clean(card.Desc or ""),
-				Color = picked and S.C.Ink or S.C.TextDim, Max = 12, XAlign = "Center", YAlign = "Top",
-				Position = UDim2.fromScale(0, 0.36), Size = UDim2.fromScale(1, 0.46), Parent = tile })
-			local hpL = S.text({ Name = "HP", Font = S.Font.Bold, Text = "HP " .. tostring(card.HP or Config.LEADER_HP),
-				Color = picked and S.C.Ink or st.Color, Max = 14, XAlign = "Center",
-				Position = UDim2.fromScale(0, 0.84), Size = UDim2.fromScale(1, 0.16), Parent = tile })
-			local function layoutTile()
-				local h = tile.AbsoluteSize.Y
-				local roomy = h >= 110
-				descL.Visible, hpL.Visible = roomy, roomy
-				nameL.Size = roomy and UDim2.fromScale(1, 0.34) or UDim2.fromScale(1, 1)
-			end
-			tile:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutTile)
-			task.defer(layoutTile)
-			tile.Activated:Connect(function()
-				if leaderIndex ~= i then leaderIndex = i; panels.Battle() end
-			end)
+			S.setBase(b, picked and st.Color or S.C.Panel2)
+			b.TextColor3 = picked and S.C.Ink or S.C.Text
+			local stroke = b:FindFirstChildOfClass("UIStroke")
+			if stroke then stroke.Thickness = picked and 3 or 1.5 end
 		end
-
-		-- สถานะ
-		statusLabel = S.text({ Font = S.Font.Bold, LayoutOrder = 2, Max = 15, XAlign = "Center",
-			Text = queueMode and ("กำลังค้นหาคู่แข่ง... " .. queueElapsed .. " วิ") or "พร้อมรบ",
-			Color = queueMode and S.C.Accent or S.C.Teal, Size = UDim2.new(1, 0, 0, 22), Parent = c })
-
-		-- ปุ่มโหมด
-		local btns = S.new("Frame", { BackgroundTransparency = 1, LayoutOrder = 3, Size = UDim2.new(1, 0, 0, 52), Parent = c }, {
-			S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0.03, 0),
-				HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }),
-		})
-		S.button({ Text = queueMode and "ยกเลิกการจับคู่" or "จับคู่ PvP", Max = 18, LayoutOrder = 1,
-			Color = queueMode and S.C.Bad or S.C.Good, TextColor = S.C.Paper, Size = UDim2.new(0.47, 0, 1, 0), Parent = btns,
-			OnClick = function()
-				if queueMode then
-					Net.invoke("Queue", "Cancel")
-					queueMode = nil
-					panels.Battle()
-				else
-					local ok, res = Net.invoke("Queue", "PvP", Decks.Leaders[leaderIndex])
-					if ok then queueMode, queueElapsed = "PvP", 0; panels.Battle()
-					else S.toast(Net.message(res), "bad") end
-				end
-			end })
-		S.button({ Text = "ซ้อมกับบอท", Max = 18, LayoutOrder = 2, Color = S.C.Violet, TextColor = S.C.Paper,
-			Size = UDim2.new(0.47, 0, 1, 0), Parent = btns,
-			OnClick = function()
-				local ok, res = Net.invoke("Queue", "Bot", Decks.Leaders[leaderIndex])
-				if not ok then S.toast(Net.message(res), "bad") end
-			end })
 	end
+	for i, id in Decks.Leaders do
+		local card = CardData[id] or {}
+		leaderBtns[i] = S.button({ Text = card.Name or id, Max = 15, LayoutOrder = i, Color = S.C.Panel2,
+			Size = UDim2.new(0, 140, 1, 0), ZIndex = 6, Parent = leaderRow,
+			OnClick = function() leaderIndex = i; paintLeaders() end })
+		leaderBtns[i].MouseEnter:Connect(function() Inspect.Show(card) end)
+		leaderBtns[i].MouseLeave:Connect(Inspect.Hide)
+	end
+	paintLeaders()
+
+	local modeRow = S.new("Frame", { Name = "Modes", BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 56),
+		Size = UDim2.new(1, 0, 0, 52), ZIndex = 5, Parent = battleDock }, {
+		S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10),
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	local pvpBtn
+	local function paintQueue()
+		pvpBtn.Text = queueMode and ("ยกเลิก (" .. queueElapsed .. " วิ)") or "จับคู่ PvP"
+		S.setBase(pvpBtn, queueMode and S.C.Bad or S.C.Good)
+	end
+	pvpBtn = S.button({ Text = "จับคู่ PvP", Max = 18, LayoutOrder = 1, Color = S.C.Good, TextColor = S.C.Paper,
+		Size = UDim2.new(0, 200, 1, 0), ZIndex = 6, Parent = modeRow,
+		OnClick = function()
+			if queueMode then
+				Net.invoke("Queue", "Cancel")
+				queueMode = nil
+				paintQueue()
+			else
+				local ok, res = Net.invoke("Queue", "PvP", Decks.Leaders[leaderIndex])
+				if ok then queueMode, queueElapsed = "PvP", 0; paintQueue()
+				else S.toast(Net.message(res), "bad") end
+			end
+		end })
+	S.button({ Text = "ซ้อมกับบอท", Max = 18, LayoutOrder = 2, Color = S.C.Violet, TextColor = S.C.Paper,
+		Size = UDim2.new(0, 200, 1, 0), ZIndex = 6, Parent = modeRow,
+		OnClick = function()
+			local ok, res = Net.invoke("Queue", "Bot", Decks.Leaders[leaderIndex])
+			if not ok then S.toast(Net.message(res), "bad") end
+		end })
+	-- ให้ dock ย่อตามความกว้างจอเล็ก
+	S.new("UISizeConstraint", { MaxSize = Vector2.new(460, 112), Parent = battleDock })
+	battleDock.Size = UDim2.new(0.9, 0, 0, 112)
+	panels.Battle = function() paintLeaders(); paintQueue() end
+	local function dockScale(short)
+		leaderRow.Size = UDim2.new(1, 0, 0, short and 32 or 48)
+		modeRow.Position = UDim2.new(0, 0, 0, short and 38 or 56)
+		modeRow.Size = UDim2.new(1, 0, 0, short and 36 or 52)
+		battleDock.Size = UDim2.new(0.9, 0, 0, short and 78 or 112)
+		battleDock.Position = UDim2.new(0.5, 0, 1, short and -6 or -12)
+	end
+
+	-- ===== ปรับตามขนาดจอ =====
+	-- จอสูง >= 480: เมนูเรียงแนวตั้งซ้ายกลาง / จอเตี้ย: เมนูเรียงแนวนอนใต้แถบบน (ซ้ายไปขวา) ไม่ชน dock และไม่ล้นจอ
+	local menuLayout = menu:FindFirstChildOfClass("UIListLayout")
+	local function layoutLobby()
+		local h = root.AbsoluteSize.Y
+		if h <= 0 then return end
+		local short = h < 480
+		if short == LobbyUI._short then return end
+		LobbyUI._short = short
+		if short then
+			menuLayout.FillDirection = Enum.FillDirection.Horizontal
+			menu.AnchorPoint = Vector2.new(0, 0)
+			menu.Position = UDim2.new(0, 12, 0, 12)
+			menu.Size = UDim2.new(1, -180, 0, 34) -- เว้นที่กล่องเพชรขวาบน
+			for _, b in tabButtons do b.Size = UDim2.new(0, 84, 1, 0) end
+			dockScale(true)
+		else
+			menuLayout.FillDirection = Enum.FillDirection.Vertical
+			menu.AnchorPoint = Vector2.new(0, 0.5)
+			menu.Position = UDim2.new(0, 12, 0.5, 0)
+			menu.Size = UDim2.fromOffset(120, 5 * 42)
+			for _, b in tabButtons do b.Size = UDim2.new(1, 0, 0, 36) end
+			dockScale(false)
+		end
+	end
+	root:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutLobby)
 
 	-- ===== การ์ดเป็นตาราง =====
 	local function cardGrid(parent, ids, order)
@@ -390,10 +415,10 @@ function LobbyUI.Build(hud, overlay)
 		end
 		local okS, st = pcall(function() return Net.invoke("GetStats") end)
 		if okS and typeof(st) == "table" then stats = st end
-		panels[currentTab]()
+		if panel.Visible or currentTab == "Battle" then panels[currentTab]() end
 	end
 
-	function LobbyUI.ResetQueue() queueMode = nil end
+	function LobbyUI.ResetQueue() queueMode = nil; panels.Battle() end
 
 	Net.on("ProfileChanged", function(p)
 		if typeof(p) ~= "table" then return end
@@ -407,14 +432,13 @@ function LobbyUI.Build(hud, overlay)
 		while task.wait(1) do
 			if queueMode then
 				queueElapsed += 1
-				if currentTab == "Battle" and statusLabel and statusLabel.Parent then
-					statusLabel.Text = "กำลังค้นหาคู่แข่ง... " .. queueElapsed .. " วิ"
-				end
+				panels.Battle()
 			end
 		end
 	end)
 
-	open("Battle")
+	paintTabs()
+	layoutLobby()
 	task.spawn(LobbyUI.Refresh)
 end
 
