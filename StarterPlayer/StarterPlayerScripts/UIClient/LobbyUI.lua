@@ -8,6 +8,7 @@ local Theme = require(UIFolder:WaitForChild("Theme"))
 local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local CardView = require(UIFolder:WaitForChild("CardView"))
 local CardInspector = require(UIFolder:WaitForChild("CardInspector"))
+local SettingsPanel = require(script.Parent:WaitForChild("SettingsPanel"))
 local CardData = require(Shared:WaitForChild("CardData"))
 local Decks = require(Shared:WaitForChild("Decks"))
 local QueueRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Queue")
@@ -87,32 +88,7 @@ local function allCardIds()
 end
 
 local function buildSettings(content)
-	UIKit.new("UIListLayout", {
-		Padding = UDim.new(0.04, 0), HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		SortOrder = Enum.SortOrder.LayoutOrder, Parent = content,
-	})
-	local items = {
-		{ Key = "Voice", Text = "เสียงพากย์กาวๆ" },
-		{ Key = "VFX", Text = "เอฟเฟกต์เวอร์วัง" },
-		{ Key = "Tomato", Text = "ให้คนดูปามะเขือเทศใส่จอ" },
-	}
-	for i, item in ipairs(items) do
-		local btn, label
-		local function refresh()
-			local on = UIKit.Settings[item.Key]
-			label.Text = item.Text .. (on and " : เปิด ✅" or " : ปิด ❌")
-			UIKit.setColor(btn, on and Theme.Color.Green or Theme.Color.Gray)
-		end
-		btn, label = UIKit.button({
-			Size = UDim2.fromScale(0.8, 0.15), Parent = content,
-			OnClick = function()
-				UIKit.Settings[item.Key] = not UIKit.Settings[item.Key]
-				refresh()
-			end,
-		})
-		btn.LayoutOrder = i
-		refresh()
-	end
+	SettingsPanel.Build(content)
 end
 
 local MENU = {

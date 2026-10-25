@@ -1,7 +1,9 @@
 -- StarterPlayerScripts/UIClient/MatchBackdrop (ModuleScript)
 -- พื้นโต๊ะ + แผ่นรองสนาม + เส้นแบ่งกลาง + แสงบอกตา + ประกายลอย
 local TweenService = game:GetService("TweenService")
-local Theme = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("UI"):WaitForChild("Theme"))
+local UIShared = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("UI")
+local Theme = require(UIShared:WaitForChild("Theme"))
+local Settings = require(UIShared:WaitForChild("Settings"))
 
 local Backdrop = {}
 Backdrop.__index = Backdrop
@@ -57,6 +59,7 @@ function Backdrop:_sparkle()
 	new("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
 	task.wait(math.random() * 8)
 	while dot.Parent do
+		if not Settings.Get("Effects") then dot.BackgroundTransparency = 1 task.wait(1) continue end
 		local x = math.random()
 		dot.Position = UDim2.fromScale(x, 1.02)
 		dot.BackgroundTransparency = 0.3 + math.random() * 0.4

@@ -2,9 +2,11 @@
 local TweenService = game:GetService("TweenService")
 local SoundService = game:GetService("SoundService")
 local Theme = require(script.Parent.Theme)
+local Settings = require(script.Parent.Settings)
 
 local UIKit = {}
 UIKit.Settings = { Voice = true, VFX = true, Tomato = true }
+Settings.Changed:Connect(function(k, v) if k == "Effects" then UIKit.Settings.VFX = v end end)
 UIKit.toastParent = nil
 
 local CENTER = Vector2.new(0.5, 0.5)
@@ -35,6 +37,7 @@ function UIKit.stroke(color, thickness)
 end
 
 function UIKit.tween(inst, time, props, style, direction)
+	time = time / (Settings.Get("AnimSpeed") or 1)
 	local t = TweenService:Create(inst, TweenInfo.new(time, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out), props)
 	t:Play()
 	return t

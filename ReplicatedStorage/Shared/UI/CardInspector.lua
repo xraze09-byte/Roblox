@@ -261,13 +261,20 @@ function CardInspector.Open(card, cards, i)
 	end
 end
 
-function CardInspector.OpenByName(name)
-	for id, data in pairs(CardData) do
-		if type(data) == "table" and data.Name == name then
-			local c = table.clone(data)
-			c.Id = id
-			return CardInspector.Open(c)
+function CardInspector.OpenByName(key)
+	if key == nil then return end
+	if type(key) == "table" then return CardInspector.Open(key) end
+	local data, id = CardData[key], key
+	if type(data) ~= "table" then
+		data = nil
+		for k, d in pairs(CardData) do
+			if type(d) == "table" and d.Name == key then data, id = d, k break end
 		end
+	end
+	if data then
+		local c = table.clone(data)
+		c.Id = id
+		CardInspector.Open(c)
 	end
 end
 

@@ -14,6 +14,10 @@ local GateRoller = require(script.Parent:WaitForChild("GateRoller"))
 local CardInspector = require(UIFolder:WaitForChild("CardInspector"))
 local HandFan = require(script.Parent:WaitForChild("HandFan"))
 local MatchBackdrop = require(script.Parent:WaitForChild("MatchBackdrop"))
+local TurnBanner = require(script.Parent:WaitForChild("TurnBanner"))
+local CombatFX = require(script.Parent:WaitForChild("CombatFX"))
+local TargetArrow = require(script.Parent:WaitForChild("TargetArrow"))
+local SettingsPanel = require(script.Parent:WaitForChild("SettingsPanel"))
 
 local RemoteFolder = ReplicatedStorage:WaitForChild("Remotes")
 local R = {}
@@ -135,20 +139,6 @@ local function setLeader(bar, name, hp, shield)
 		UIKit.sfx("Hit")
 	end
 	bar.Value = hp
-end
-
-local function banner(text, color)
-	local b = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.6, 0.12), Position = UDim2.fromScale(-0.5, 0.45), AnchorPoint = CENTER,
-		BackgroundColor3 = color or Theme.Color.Yellow, Rotation = -4, Parent = overlay,
-	}, { UIKit.corner(), UIKit.stroke(nil, 4) })
-	UIKit.label({ Text = text, Size = UDim2.fromScale(0.9, 0.8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = b, MaxTextSize = 60 })
-	UIKit.tween(b, 0.35, { Position = UDim2.fromScale(0.5, 0.45) }, Enum.EasingStyle.Back)
-	task.delay(1.2, function()
-		UIKit.tween(b, 0.3, { Position = UDim2.fromScale(1.5, 0.45) }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-		task.wait(0.35)
-		b:Destroy()
-	end)
 end
 
 local function pushLog(text, colorName)
@@ -365,17 +355,6 @@ local function endTurn()
 	end)
 end
 
-local surrenderArmed = 0
-local function surrender()
-	if not state then return end
-	if os.clock() - surrenderArmed > 3 then
-		surrenderArmed = os.clock()
-		UIKit.toast("กดอีกครั้งภายใน 3 วิ เพื่อยืนยันยอมแพ้ 🏳️")
-		return
-	end
-	R.Surrender:FireServer()
-end
-
 local lastPray = 0
 local function pray()
 	if os.clock() - lastPray < 5 then UIKit.toast("พระท่านพักอยู่ รออีกแป๊บ 🙏") return end
@@ -402,10 +381,12 @@ local function sync(container, cards, map, zoneName)
 		alive[card.Uid] = true
 		local view = map[card.Uid]
 		if view then
-			local oldHP = view.Card.HP
+			local oldHP, oldATK = view.Card.HP, view.Card.ATK
 			view:Update(card)
 			CardInspector.Refresh(card)
 			if oldHP and card.HP and card.HP < oldHP then view:Hit(oldHP - card.HP) end
+			if oldHP and card.HP and card.HP > oldHP then CombatFX.Number(view.Body, card.HP - oldHP, "Heal") end
+			if oldATK and card.ATK and card.ATK ~= oldATK then CombatFX.Number(view.Body, card.ATK - oldATK, "Atk") end
 		else
 			view = CardView.new(card, {
 				Size = CARD_SIZE[zoneName],
@@ -433,15 +414,16 @@ local function fanHand()
 end
 
 local function render(s)
+	local prev = state
 	local first = state == nil
 	local keepUid = selected and selected.mode ~= "attack" and selected.view.Card.Uid
 	state = s
 	if first then
 		gui.Enabled = true
 		if callbacks.OnStart then callbacks.OnStart() end
-		banner(s.isMyTurn and "เริ่มแมตช์! คุณเริ่มก่อน 🔥" or "เริ่มแมตช์! ศัตรูเริ่มก่อน 😈", Theme.Color.Pink)
+		TurnBanner.Show(s.isMyTurn, true)
 	elseif s.isMyTurn ~= ui.lastTurn then
-		banner(s.isMyTurn and "ตาคุณแล้ว! 🔥" or "ตาศัตรู 😈", s.isMyTurn and Theme.Color.Yellow or Theme.Color.Blue)
+		TurnBanner.Show(s.isMyTurn)
 	end
 	ui.lastTurn = s.isMyTurn
 	if ui.backdrop then ui.backdrop:SetTurn(s.isMyTurn) end
@@ -452,6 +434,13 @@ local function render(s)
 	sync(ui.myGate, s.myGate and { s.myGate } or {}, views.myGate, "myGate")
 	sync(ui.hand, s.myHand, views.hand, "hand")
 	fanHand()
+	if prev and prev.matchId == s.matchId then
+		CombatFX.Track(ui.myLeader.Root, prev.myHP, s.myHP, "HP")
+		CombatFX.Track(ui.oppLeader.Root, prev.oppHP, s.oppHP, "HP")
+		CombatFX.Track(ui.myLeader.Root, prev.myShield, s.myShield, "Shield")
+		CombatFX.Track(ui.oppLeader.Root, prev.oppShield, s.oppShield, "Shield")
+		CombatFX.Track(ui.pointsBubble, prev.myPoints, s.myPoints, "Points")
+	end
 
 	ui.oppGateBack.Visible = s.oppGateFilled == true
 	for _, child in ui.oppHand:GetChildren() do
@@ -580,10 +569,33 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	ui.oppGateBack.Parent = ui.oppGate
 	ui.oppPile = pileLabel(UDim2.fromScale(0.9, 0.17))
 
-	UIKit.button({
-		Text = "🏳️ ยอมแพ้", Color = Theme.Color.Gray, Size = UDim2.fromScale(0.1, 0.06),
-		Position = UDim2.fromScale(0.99, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = gui, OnClick = surrender,
+	TurnBanner.Init(gui)
+
+	-- ปุ่ม ⚙️ มุมขวาบน: ตั้งค่า + ยอมแพ้
+	local settingsPanel
+	local gear = UIKit.button({
+		Text = "⚙️", Color = Theme.Color.Gray, Size = UDim2.fromScale(0.05, 0.08),
+		Position = UDim2.fromScale(0.99, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = gui,
+		OnClick = function()
+			if not settingsPanel then
+				settingsPanel = UIKit.panel(overlay, "ตั้งค่า", Theme.Color.Gray)
+				SettingsPanel.Build(settingsPanel.Content, {
+					OnSurrender = function()
+						if settingsPanel.Close then settingsPanel.Close() end
+						R.Surrender:FireServer() -- ยืนยัน 2 ชั้นอยู่ใน SettingsPanel แล้ว จึงไม่ผ่าน surrender() ที่ต้องกดซ้ำอีก
+					end,
+				})
+			end
+			settingsPanel.Open()
+		end,
 	})
+	UIKit.new("UIAspectRatioConstraint", { Parent = gear })
+
+	-- ลูกศรเล็ง: ทำงานตามตัวแปร selected เดิม
+	RunService.RenderStepped:Connect(function()
+		local v = gui.Enabled and selected and (selected.mode == "attack" or selected.mode == "target") and selected.view
+		TargetArrow.Follow(v and v.Body or nil, selected and selected.mode == "target" and Theme.Color.Yellow or Theme.Color.Red)
+	end)
 
 	-- ประวัติเหตุการณ์
 	ui.log = UIKit.new("Frame", {
@@ -640,12 +652,15 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 		AnchorPoint = Vector2.new(1, 0.5), Parent = gui, OnClick = endTurn,
 	})
 
-	-- คลิกขวาที่แถบผู้นำ = ดูการ์ดผู้นำ (state.myLeader = "ชื่อผู้เล่น • ชื่อผู้นำ")
+	-- คลิกขวา/กดค้างที่แถบผู้นำ = ดูการ์ดผู้นำ (state.myLeader = "ชื่อผู้เล่น • ชื่อผู้นำ")
+	local function leaderKey(full)
+		if not full then return nil end
+		return (tostring(full):match("•%s*(.+)$")) or full
+	end
 	local function leaderPeek(bar, getText)
-		bar.Root.InputBegan:Connect(function(input)
-			if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
-			local full = getText()
-			if full then CardInspector.OpenByName((tostring(full):match("•%s*(.+)$")) or full) end
+		bar.Root.MouseButton2Click:Connect(function() CardInspector.OpenByName(leaderKey(getText())) end)
+		bar.Root.TouchLongPress:Connect(function(_, st)
+			if st == Enum.UserInputState.Begin then CardInspector.OpenByName(leaderKey(getText())) end
 		end)
 	end
 	leaderPeek(ui.myLeader, function() return state and state.myLeader end)

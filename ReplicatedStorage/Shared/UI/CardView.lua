@@ -1,6 +1,7 @@
 -- ReplicatedStorage/Shared/UI/CardView
 local Theme = require(script.Parent.Theme)
 local UIKit = require(script.Parent.UIKit)
+local Settings = require(script.Parent.Settings)
 local TweenService = game:GetService("TweenService")
 local function Inspector() return require(script.Parent.CardInspector) end -- require ตอนใช้ เลี่ยง require วนกัน
 
@@ -20,7 +21,9 @@ local function addShine(art, strength)
 	})
 	local tw = TweenService:Create(g, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 2.5 + math.random()), { Offset = Vector2.new(1, 0) })
 	tw:Play()
-	shine.Destroying:Once(function() tw:Cancel() end)
+	shine.Visible = Settings.Get("Effects")
+	local c = Settings.Changed:Connect(function(k, v) if k == "Effects" then shine.Visible = v end end)
+	shine.Destroying:Once(function() tw:Cancel() c:Disconnect() end)
 end
 
 local CardView = {}
