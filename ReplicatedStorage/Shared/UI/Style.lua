@@ -14,22 +14,24 @@ Style.Font = {
 }
 
 Style.C = {
-	Bg = Color3.fromRGB(21, 23, 26),     Panel = Color3.fromRGB(30, 33, 37),
-	Panel2 = Color3.fromRGB(40, 44, 49), Line = Color3.fromRGB(62, 67, 72),
-	Felt = Color3.fromRGB(28, 41, 37),   FeltDark = Color3.fromRGB(21, 31, 28),
-	Paper = Color3.fromRGB(234, 228, 214), Ink = Color3.fromRGB(30, 28, 26),
-	InkSoft = Color3.fromRGB(105, 99, 90), Text = Color3.fromRGB(230, 226, 218),
-	TextDim = Color3.fromRGB(146, 150, 146), Accent = Color3.fromRGB(214, 137, 54),
-	Good = Color3.fromRGB(104, 160, 104), Bad = Color3.fromRGB(190, 74, 58),
-	Info = Color3.fromRGB(96, 142, 186),
+	Bg = Color3.fromRGB(24, 20, 44),     Panel = Color3.fromRGB(40, 34, 72),
+	Panel2 = Color3.fromRGB(58, 50, 100), Line = Color3.fromRGB(104, 90, 168),
+	Felt = Color3.fromRGB(26, 62, 74),   FeltDark = Color3.fromRGB(16, 40, 50),
+	Paper = Color3.fromRGB(246, 238, 220), Ink = Color3.fromRGB(34, 28, 46),
+	InkSoft = Color3.fromRGB(112, 100, 130), Text = Color3.fromRGB(244, 240, 255),
+	TextDim = Color3.fromRGB(176, 168, 210), Accent = Color3.fromRGB(255, 170, 58),
+	Good = Color3.fromRGB(72, 200, 130), Bad = Color3.fromRGB(240, 86, 96),
+	Info = Color3.fromRGB(86, 170, 255),
+	Pink = Color3.fromRGB(255, 108, 170), Violet = Color3.fromRGB(150, 110, 255),
+	Teal = Color3.fromRGB(56, 208, 200),
 }
 Style.Rarity = {
-	Common = Color3.fromRGB(150, 146, 138), Rare = Color3.fromRGB(86, 132, 180),
-	Epic = Color3.fromRGB(150, 98, 170), Legend = Color3.fromRGB(205, 160, 60), Mystic = Color3.fromRGB(200, 90, 120),
+	Common = Color3.fromRGB(170, 168, 184), Rare = Color3.fromRGB(70, 150, 255),
+	Epic = Color3.fromRGB(184, 100, 255), Legend = Color3.fromRGB(255, 190, 50), Mystic = Color3.fromRGB(255, 90, 150),
 }
 Style.Element = {
-	Sati = Color3.fromRGB(74, 110, 140), Biao = Color3.fromRGB(160, 72, 60),
-	Muen = Color3.fromRGB(110, 96, 140), Gawa = Color3.fromRGB(150, 120, 60),
+	Sati = Color3.fromRGB(60, 150, 220), Biao = Color3.fromRGB(226, 76, 70),
+	Muen = Color3.fromRGB(150, 100, 230), Gawa = Color3.fromRGB(230, 170, 50),
 }
 Style.Name = {
 	Type = { Character = "ตัวละคร", Spell = "เวท", Weapon = "อาวุธ", Leader = "ผู้นำ" },
@@ -91,9 +93,11 @@ function Style.button(p)
 		Style.new("UITextSizeConstraint", { MaxTextSize = p.Max or 18, MinTextSize = 6 }),
 		Style.pad(p.Pad or 6),
 	})
+	local rim = Style.stroke(base:Lerp(Color3.new(1, 1, 1), 0.35), 1.5, btn)
 	local hovered = false
 	local function paint()
 		local c = btn:GetAttribute("Base") or base
+		rim.Color = c:Lerp(Color3.new(1, 1, 1), 0.35)
 		if btn:GetAttribute("Disabled") then
 			btn.BackgroundColor3 = c:Lerp(Style.C.Bg, 0.55)
 			btn.TextTransparency = 0.45

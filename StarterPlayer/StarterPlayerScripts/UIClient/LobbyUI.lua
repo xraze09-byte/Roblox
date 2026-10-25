@@ -20,16 +20,24 @@ function LobbyUI.Build(hud, overlay)
 	local queueMode = nil
 	local queueElapsed = 0
 
-	local root = S.new("Frame", { Name = "LobbyRoot", BackgroundColor3 = S.C.Bg,
-		Size = UDim2.fromScale(1, 1), Parent = hud }, { S.pad(14) })
+	-- พื้นหลังทึบเต็มจอ (เดิมโปร่งใส เห็นฉาก 3D ทะลุ)
+	local backdrop = S.new("Frame", { Name = "Backdrop", BackgroundColor3 = S.C.Bg,
+		Size = UDim2.fromScale(1, 1), Parent = hud })
+	S.new("Frame", { Name = "GlowTop", BackgroundColor3 = S.C.Violet, BackgroundTransparency = 0.82,
+		Size = UDim2.fromScale(1, 0.35), Parent = backdrop })
+	S.new("Frame", { Name = "GlowBottom", BackgroundColor3 = S.C.Pink, BackgroundTransparency = 0.9,
+		AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0.25), Parent = backdrop })
+
+	local root = S.new("Frame", { Name = "LobbyRoot", BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1), Parent = backdrop }, { S.pad(14) })
 
 	-- แถบบน: ชื่อเกม + แสดงเพชร
 	local topBar = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 0.08), Parent = root })
-	S.text({ Font = S.Font.Heavy, Text = "GAWA CARDS", Max = 26, Size = UDim2.fromScale(0.4, 1), Parent = topBar })
+	S.text({ Font = S.Font.Heavy, Text = "GAWA CARDS", Color = S.C.Accent, Max = 28, Size = UDim2.fromScale(0.5, 1), Parent = topBar })
 	
-	local gemBox = S.new("Frame", { BackgroundColor3 = S.C.Panel, AnchorPoint = Vector2.new(1, 0),
+	local gemBox = S.new("Frame", { BackgroundColor3 = S.C.Ink, AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.fromScale(1, 0), Size = UDim2.fromOffset(130, 36), Parent = topBar }, { S.corner(4) })
-	S.stroke(S.C.Line, 1, gemBox)
+	S.stroke(S.C.Accent, 1.5, gemBox)
 	local gemLabel = S.text({ Font = S.Font.Bold, Color = S.C.Accent, Max = 16, XAlign = "Center", Parent = gemBox })
 
 	-- เนื้อหาหลักตรงกลาง
@@ -37,9 +45,7 @@ function LobbyUI.Build(hud, overlay)
 		Position = UDim2.fromScale(0, 0.09), Size = UDim2.fromScale(1, 0.9), Parent = root })
 
 	-- แท็บซ้าย: เมนูเลือกโหมด/ระบบต่างๆ (เลื่อนได้ ไม่ล้นจอ)
-	local menuF = S.new("ScrollingFrame", { BackgroundTransparency = 1, Size = UDim2.fromScale(0.22, 1),
-		ScrollBarThickness = 4, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
-		ScrollingDirection = Enum.ScrollingDirection.Y, Parent = content }, {
+	local menuF = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(0.22, 1), Parent = content }, {
 		S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
 	})
 
@@ -48,7 +54,7 @@ function LobbyUI.Build(hud, overlay)
 		Position = UDim2.fromScale(0.235, 0), Size = UDim2.fromScale(0.765, 1), Parent = content }, {
 		S.corner(6), S.pad(14),
 	})
-	S.stroke(S.C.Line, 1, panel)
+	S.stroke(S.C.Violet, 2, panel)
 
 	local page = nil
 	local tabButtons = {}
@@ -74,10 +80,12 @@ function LobbyUI.Build(hud, overlay)
 		return f
 	end
 
+	local TAB_COLOR = { Battle = S.C.Bad, Deck = S.C.Info, Gacha = S.C.Pink, Quests = S.C.Good, Stats = S.C.Violet }
 	local function show(tabId)
 		for id, btn in tabButtons do
-			S.setBase(btn, id == tabId and S.C.Accent or S.C.Panel2)
-			btn.TextColor3 = id == tabId and S.C.Ink or S.C.Text
+			local on = id == tabId
+			S.setBase(btn, on and TAB_COLOR[id] or S.C.Panel2)
+			btn.TextColor3 = on and S.C.Paper or S.C.TextDim
 		end
 	end
 
@@ -108,15 +116,17 @@ function LobbyUI.Build(hud, overlay)
 		})
 		for i, id in Decks.Leaders do
 			local c = CardData[id]
+			local LEADER_COLOR = { S.C.Accent, S.C.Violet, S.C.Teal }
+			local lc = LEADER_COLOR[(i - 1) % #LEADER_COLOR + 1]
 			S.button({ Text = (c and c.Name or id), Max = 14, LayoutOrder = i,
-				Color = (leaderIndex == i and S.C.Accent or S.C.Panel2),
+				Color = (leaderIndex == i and lc or S.C.Panel2),
 				TextColor = (leaderIndex == i and S.C.Ink or S.C.Text),
 				Size = UDim2.new(0.3, 0, 1, 0), Parent = leadersF,
 				OnClick = function() leaderIndex = i; panels.Battle() end })
 		end
 
 		S.text({ Text = queueMode and ("กำลังค้นหาคู่แข่ง... (" .. queueElapsed .. " วิ)") or "พร้อมรบ",
-			Font = S.Font.Bold, Max = 16, XAlign = "Center", LayoutOrder = 3, Size = UDim2.new(1, 0, 0, 28), Parent = pg })
+			Font = S.Font.Bold, Color = queueMode and S.C.Accent or S.C.Teal, Max = 16, XAlign = "Center", LayoutOrder = 3, Size = UDim2.new(1, 0, 0, 28), Parent = pg })
 
 		local btns = S.new("Frame", { BackgroundTransparency = 1, LayoutOrder = 4, Size = UDim2.new(1, 0, 0, 56), Parent = pg }, {
 			S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 12),
@@ -134,7 +144,7 @@ function LobbyUI.Build(hud, overlay)
 					if ok then queueMode = "PvP"; queueElapsed = 0; panels.Battle() else S.toast(Net.message(res), "bad") end
 				end
 			end })
-		S.button({ Text = "ซ้อมกับบอท", Max = 18, LayoutOrder = 2, Color = S.C.Info, TextColor = S.C.Paper,
+		S.button({ Text = "ซ้อมกับบอท", Max = 18, LayoutOrder = 2, Color = S.C.Violet, TextColor = S.C.Paper,
 			Size = UDim2.new(0.4, 0, 1, 0), Parent = btns,
 			OnClick = function()
 				local ok, res = Net.invoke("Queue", "Bot", Decks.Leaders[leaderIndex])
