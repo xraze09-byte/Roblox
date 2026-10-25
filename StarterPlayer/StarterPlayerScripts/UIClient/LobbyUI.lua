@@ -20,6 +20,8 @@ end
 local BountyBoard = tryRequire("BountyBoard")
 local TournamentBracket = tryRequire("TournamentBracket")
 local FarmUI = tryRequire("FarmUI")
+local TowerUI = tryRequire("TowerUI")
+local DeckBuilder = tryRequire("DeckBuilder")
 
 local LobbyUI = {}
 
@@ -220,9 +222,21 @@ function LobbyUI.Build(hud, overlay)
 	panels.Deck = function()
 		local c = newPage(("เด็คของคุณ (%d ใบ)"):format(DeckRules.Size))
 		S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = c })
-		local holder = S.new("Frame", { BackgroundTransparency = 1, LayoutOrder = 1, Size = UDim2.new(1, 0, 1, -48), Parent = c })
+		local holder = S.new("Frame", { BackgroundTransparency = 1, LayoutOrder = 1, Size = UDim2.new(1, 0, 1, -(DeckBuilder and 100 or 48)), Parent = c })
 		cardGrid(holder, profile and profile.Deck or Decks.Starter)
-		S.button({ Text = "บันทึกเด็ค", Max = 16, LayoutOrder = 2, Color = S.C.Info, TextColor = S.C.Paper,
+		if DeckBuilder and profile then
+			-- ตัวจัดเด็คใหม่ ใช้ SaveDeck เดิมของเซิร์ฟเวอร์ (คืนค่า ok, ข้อความ)
+			S.button({ Text = "จัดเด็ค (แบบใหม่)", Max = 16, LayoutOrder = 2, Color = S.C.Pink, TextColor = S.C.Paper,
+				Size = UDim2.new(1, 0, 0, 40), Parent = c, OnClick = function()
+					DeckBuilder.Open(overlay, { Cards = CardData, Owned = profile.Collection, Deck = profile.Deck,
+						Message = Net.message,
+						OnSave = function(ids)
+							local ok, err = Net.invoke("SaveDeck", ids)
+							return ok, err
+						end })
+				end })
+		end
+		S.button({ Text = "บันทึกเด็ค", Max = 16, LayoutOrder = 3, Color = S.C.Info, TextColor = S.C.Paper,
 			Size = UDim2.new(0.4, 0, 0, 38), Parent = c,
 			OnClick = function()
 				local ok, err = Net.invoke("SaveDeck", profile and profile.Deck or Decks.Starter)
@@ -325,6 +339,7 @@ function LobbyUI.Build(hud, overlay)
 		local c = newPage("โหมดสนุก (ตัวอย่าง)")
 		local list = S.scroll({ Parent = c, Size = UDim2.fromScale(1, 1), Gap = 8 })
 		local entries = {
+			{ Text = "หอคอย", Color = S.C.Violet, Mod = TowerUI },
 			{ Text = "ประกาศจับ (Bounty)", Color = S.C.Accent, Mod = BountyBoard },
 			{ Text = "ทัวร์นาเมนต์", Color = S.C.Info, Mod = TournamentBracket },
 			{ Text = "ฟาร์ม", Color = S.C.Good, Mod = FarmUI },

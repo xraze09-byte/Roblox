@@ -10,6 +10,18 @@ local CardFace = require(script.Parent:WaitForChild("CardFace"))
 local Drag = require(script.Parent:WaitForChild("DragController"))
 local Inspect = require(script.Parent:WaitForChild("Inspect"))
 
+-- โมดูลหน้าตาใหม่ โหลดแบบ pcall: ถ้าไฟล์ใดพัง แมตช์ยังเล่นได้ด้วย UI เดิม
+local function tryRequire(name)
+	local inst = script.Parent:FindFirstChild(name)
+	if not inst then return nil end
+	local ok, mod = pcall(require, inst)
+	if not ok then warn("[MatchUI] โหลด " .. name .. " ไม่ได้: " .. tostring(mod)) return nil end
+	return mod
+end
+local MatchHUD = tryRequire("MatchHUD")
+local HandFan = tryRequire("HandFan")
+local GateRoller = tryRequire("GateRoller")
+
 local OUTCOME = { Golden = "ทองคำ", Pumped = "พลังพุ่ง", Normal = "ปกติ", Droopy = "ห่อเหี่ยว", Poop = "ซวย" }
 
 local function reasonText(reason, won)
@@ -149,11 +161,42 @@ function MatchUI.Build(gui, overlay, cb)
 		Position = UDim2.fromScale(0.795, 0), Size = UDim2.fromScale(0.205, 1), Parent = myBarF,
 		Debounce = 0.6, OnClick = function() endTurn() end })
 
-	ui.hand = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = handF }, {
-		S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
-	})
+	if HandFan then
+		-- พัดการ์ด: จัดตำแหน่งเอง ห้ามมี UIListLayout (จะแย่งกันจัด)
+		ui.hand = HandFan.Container(handF, UDim2.fromScale(0, 0), UDim2.fromScale(1, 1))
+	else
+		ui.hand = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = handF }, {
+			S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
+		})
+	end
+
+	-- HUD ใหม่ (HP / พลังกาว / SKIP / นาฬิกา) ทับของเดิม: ซ่อนของเดิมไม่ให้ขึ้นซ้อนกัน 2 ชุด
+	-- สร้างใหม่ทุกแมตช์ และทำลายตอนจบ (วงซัมมอนอยู่ในช่องสนาม ต้องลบเองด้วย ไม่งั้นแมตช์ถัดไปจะซ้อนกัน)
+	local hud, myCircles, oppCircles, prevState = nil, {}, {}, nil
+	local oldHud = { ui.endBtn, pts, ui.turn, timerBack, ui.timerText, ui.me.HpFill.Parent, ui.me.Shield, ui.opp.HpFill.Parent, ui.opp.Shield }
+
+	local function teardownHud()
+		for _, c in myCircles do pcall(c.Destroy, c) end
+		for _, c in oppCircles do pcall(c.Destroy, c) end
+		myCircles, oppCircles, prevState = {}, {}, nil
+		if hud then pcall(hud.Destroy, hud); hud = nil end
+		for _, g in oldHud do g.Visible = true end -- ถ้า HUD ใหม่หาย ของเดิมต้องกลับมา
+	end
+
+	local function buildHud()
+		if not MatchHUD or hud then return end
+		local okHud, res = pcall(MatchHUD.new, root, { OnSkip = function() endTurn() end })
+		if not okHud then
+			warn("[MatchUI] MatchHUD.new ล้มเหลว ใช้ UI เดิมแทน: " .. tostring(res))
+			return
+		end
+		hud = res
+		for i, slot in ipairs(ui.myRow.Slots) do myCircles[i] = MatchHUD.decorateSlot(slot, true) end
+		for i, slot in ipairs(ui.oppRow.Slots) do oppCircles[i] = MatchHUD.decorateSlot(slot, false) end
+		for _, g in oldHud do g.Visible = false end
+	end
 
 	local result = S.new("Frame", { Name = "MatchResult", BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.35,
 		Size = UDim2.fromScale(1, 1), Visible = false, Active = true, ZIndex = 30, Parent = overlay })
@@ -276,6 +319,7 @@ function MatchUI.Build(gui, overlay, cb)
 	end
 
 	exitMatch = function()
+		teardownHud()
 		result.Visible = false
 		root.Visible = false
 		ended = false
@@ -294,7 +338,14 @@ function MatchUI.Build(gui, overlay, cb)
 			end
 			Drag.Begin(input, {
 				Source = card.Uid,
-				CanStart = function() return (card.Cost or 0) <= (state.myPoints or 0) end,
+				CanStart = function()
+					if (card.Cost or 0) > (state.myPoints or 0) then
+						if HandFan then HandFan.Reject(faceCard) end -- แต้มไม่พอ: การ์ดสั่นให้รู้
+						return false
+					end
+					if HandFan then HandFan.SetHeld(ui.hand, faceCard, true) end -- ใบที่ลากยุบลงจากพัด
+					return true
+				end,
 				Ghost = function()
 					local g = CardFace.new(card, { Size = UDim2.fromOffset(88, 122) })
 					g.Root.ZIndex = 50
@@ -306,7 +357,10 @@ function MatchUI.Build(gui, overlay, cb)
 					return activeTargets
 				end,
 				OnHover = markTargets,
-				OnEnd = clearTargets,
+				OnEnd = function()
+					if HandFan then HandFan.SetHeld(ui.hand, faceCard, false) end
+					clearTargets()
+				end,
 				OnDrop = function(target)
 					if not target then return end
 					local val = target.Value
@@ -357,7 +411,7 @@ function MatchUI.Build(gui, overlay, cb)
 				v = CardFace.new(c, {})
 				v.Root.Parent = container
 				if isHand then bindHand(v, c) else bindField(v, c) end
-				v:PopIn()
+				if not (isHand and HandFan) then v:PopIn() end -- พัดการ์ดมีอนิเมชันบินเข้ามาเอง
 				viewMap[uid] = v
 			else
 				v:Update(c)
@@ -378,6 +432,7 @@ function MatchUI.Build(gui, overlay, cb)
 		root.Visible = true
 		-- เรียกทุกครั้งที่เริ่มแมตช์ใหม่ (เดิมตั้ง cb.OnStart = nil ทำให้แมตช์ที่ 2 ไม่ซ่อนล็อบบี้)
 		if isNewMatch and cb.OnStart then cb.OnStart() end
+		if isNewMatch then buildHud() end
 
 		ui.turn.Text = if s.isMyTurn then "เทิร์นของคุณ" else "ตาคู่แข่ง"
 		ui.turn.TextColor3 = s.isMyTurn and S.C.Accent or S.C.TextDim
@@ -399,6 +454,27 @@ function MatchUI.Build(gui, overlay, cb)
 		syncZone(ui.hand, s.myHand, views.hand, true)
 		syncZone(ui.myRow.Field, s.myField, views.myField, false)
 		syncZone(ui.oppRow.Field, s.oppField, views.oppField, false)
+
+		if HandFan then
+			-- เรียงตามลำดับในมือที่เซิร์ฟเวอร์ส่งมา
+			local ordered = {}
+			for _, c in ipairs(s.myHand or {}) do
+				local v = views.hand[c.Uid]
+				if v then table.insert(ordered, v) end
+			end
+			HandFan.Layout(ui.hand, ordered)
+		end
+		if hud then
+			local okA, errA = pcall(function()
+				hud:Apply(s)
+				if prevState then
+					MatchHUD.diffField(prevState.myField, s.myField, myCircles)
+					MatchHUD.diffField(prevState.oppField, s.oppField, oppCircles)
+				end
+			end)
+			if not okA then warn("[MatchUI] HUD: " .. tostring(errA)) end
+		end
+		prevState = s
 
 		-- ช่องเกต
 		ui.myRow.GateSlot:ClearAllChildren()
@@ -422,14 +498,16 @@ function MatchUI.Build(gui, overlay, cb)
 	end)
 
 	Net.on("GateRolled", function(mine, card, outcome)
-		local name = S.clean(card.Name)
+		local name = S.clean(card and card.Name or "?")
 		local outName = OUTCOME[outcome] or outcome
 		S.toast(("เกต: %s ออกผล [%s]"):format(name, outName), mine and "good" or "info")
+		if GateRoller then GateRoller.Play(overlay, card, outcome, mine) end
 	end)
 
 	Net.on("MatchEnded", function(won, reason, id, reward)
 		if id ~= matchId and matchId ~= nil then return end
 		ended = true
+		teardownHud()
 		ui.resTitle.Text = won and "ชนะแล้ว!" or "แพ้แล้ว!"
 		ui.resTitle.TextColor3 = won and S.C.Good or S.C.Bad
 		ui.resReason.Text = reasonText(reason, won)
