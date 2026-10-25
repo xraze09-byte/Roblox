@@ -11,6 +11,9 @@ local Theme = require(UIFolder:WaitForChild("Theme"))
 local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local CardView = require(UIFolder:WaitForChild("CardView"))
 local GateRoller = require(script.Parent:WaitForChild("GateRoller"))
+local CardInspector = require(UIFolder:WaitForChild("CardInspector"))
+local HandFan = require(script.Parent:WaitForChild("HandFan"))
+local MatchBackdrop = require(script.Parent:WaitForChild("MatchBackdrop"))
 
 local RemoteFolder = ReplicatedStorage:WaitForChild("Remotes")
 local R = {}
@@ -336,21 +339,20 @@ local function onLeaderClick(which)
 end
 
 local function inspect(card)
-	local dim = UIKit.new("TextButton", {
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.4,
-		Text = "", AutoButtonColor = false, Parent = overlay,
-	})
-	local close = function() dim:Destroy() end
-	dim.Activated:Connect(close)
-	local big = CardView.new(card, { Size = UDim2.fromScale(0.5, 0.7), OnClick = close })
-	big.Frame.AnchorPoint = CENTER
-	big.Frame.Position = UDim2.fromScale(0.5, 0.45)
-	big.Frame.Parent = dim
-	big:PopIn()
-	UIKit.label({
-		Text = card.Flavor or "", Font = Theme.FontBody, Size = UDim2.fromScale(0.7, 0.07),
-		Position = UDim2.fromScale(0.5, 0.88), AnchorPoint = CENTER, Parent = dim,
-	})
+	CardInspector.Open(card)
+end
+
+-- เปิดดูแล้วกด ◀ ▶ ไล่ดูการ์ดในโซนเดียวกันได้
+local function inspectZone(map, view)
+	local sorted = {}
+	for _, v in pairs(map) do table.insert(sorted, v) end
+	table.sort(sorted, function(a, b) return a.Frame.LayoutOrder < b.Frame.LayoutOrder end)
+	local cards, idx = {}, 1
+	for i, v in ipairs(sorted) do
+		cards[i] = v.Card
+		if v == view then idx = i end
+	end
+	CardInspector.Open(view.Card, cards, idx)
 end
 
 local function endTurn()
@@ -402,13 +404,15 @@ local function sync(container, cards, map, zoneName)
 		if view then
 			local oldHP = view.Card.HP
 			view:Update(card)
+			CardInspector.Refresh(card)
 			if oldHP and card.HP and card.HP < oldHP then view:Hit(oldHP - card.HP) end
 		else
 			view = CardView.new(card, {
 				Size = CARD_SIZE[zoneName],
 				ShowSleep = zoneName == "myField" or zoneName == "oppField",
 				OnClick = function(v) onCardClick(zoneName, v) end,
-				OnInspect = function(v) inspect(v.Card) end,
+				NoHover = zoneName == "hand", -- ในมือให้ HandFan จัดการเอง
+			OnInspect = function(v) inspectZone(map, v) end,
 			})
 			view.Frame.Parent = container
 			view:PopIn()
@@ -425,12 +429,7 @@ local function sync(container, cards, map, zoneName)
 end
 
 local function fanHand()
-	local list = {}
-	for _, v in pairs(views.hand) do table.insert(list, v) end
-	table.sort(list, function(a, b) return a.Frame.LayoutOrder < b.Frame.LayoutOrder end)
-	for i, v in ipairs(list) do
-		v.Frame.Rotation = (i - (#list + 1) / 2) * 4
-	end
+	HandFan.Layout(ui.hand, views.hand)
 end
 
 local function render(s)
@@ -445,6 +444,7 @@ local function render(s)
 		banner(s.isMyTurn and "ตาคุณแล้ว! 🔥" or "ตาศัตรู 😈", s.isMyTurn and Theme.Color.Yellow or Theme.Color.Blue)
 	end
 	ui.lastTurn = s.isMyTurn
+	if ui.backdrop then ui.backdrop:SetTurn(s.isMyTurn) end
 
 	clearSelection()
 	sync(ui.oppField, s.oppField, views.oppField, "oppField")
@@ -566,22 +566,23 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	}, {
 		UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 150, 150)) }),
 	})
+	ui.backdrop = MatchBackdrop.new(gui)
 
 	-- ฝั่งศัตรู
-	ui.oppLeader = leaderBar(UDim2.fromScale(0.98, 0.02), Vector2.new(1, 0))
+	ui.oppLeader = leaderBar(UDim2.fromScale(0.02, 0.02), Vector2.new(0, 0))
 	ui.oppLeader.Root.Activated:Connect(function() onLeaderClick("oppLeader") end)
-	ui.oppHand = zone("OppHand", UDim2.fromScale(0.5, 0.015), UDim2.fromScale(0.3, 0.1), { Transparency = 1 })
+	ui.oppHand = zone("OppHand", UDim2.fromScale(0.5, -0.035), UDim2.fromScale(0.3, 0.1), { Transparency = 1 })
 	ui.oppField = zone("OppField", UDim2.fromScale(0.5, 0.13), UDim2.fromScale(0.62, 0.22))
-	ui.oppGate = gateZone(UDim2.fromScale(0.89, 0.13))
+	ui.oppGate = gateZone(UDim2.fromScale(0.11, 0.13))
 	ui.oppGateBack = CardView.back(UDim2.fromScale(0.95, 0.8))
 	ui.oppGateBack.LayoutOrder = 1
 	ui.oppGateBack.Visible = false
 	ui.oppGateBack.Parent = ui.oppGate
-	ui.oppPile = pileLabel(UDim2.fromScale(0.1, 0.15))
+	ui.oppPile = pileLabel(UDim2.fromScale(0.9, 0.17))
 
 	UIKit.button({
 		Text = "🏳️ ยอมแพ้", Color = Theme.Color.Gray, Size = UDim2.fromScale(0.1, 0.06),
-		Position = UDim2.fromScale(0.01, 0.02), Parent = gui, OnClick = surrender,
+		Position = UDim2.fromScale(0.99, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = gui, OnClick = surrender,
 	})
 
 	-- ประวัติเหตุการณ์
@@ -605,8 +606,8 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 
 	-- ฝั่งเรา
 	ui.myField = zone("MyField", UDim2.fromScale(0.5, 0.40), UDim2.fromScale(0.62, 0.22))
-	ui.myGate = gateZone(UDim2.fromScale(0.89, 0.40))
-	ui.myPile = pileLabel(UDim2.fromScale(0.1, 0.52))
+	ui.myGate = gateZone(UDim2.fromScale(0.11, 0.40))
+	ui.myPile = pileLabel(UDim2.fromScale(0.9, 0.53))
 	ui.actions = UIKit.new("Frame", {
 		Size = UDim2.fromScale(0.56, 0.06), Position = UDim2.fromScale(0.5, 0.635), AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundTransparency = 1, Visible = false, Parent = gui,
@@ -616,7 +617,7 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 			SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0.02, 0),
 		}),
 	})
-	ui.hand = zone("Hand", UDim2.fromScale(0.5, 0.71), UDim2.fromScale(0.56, 0.28), { Transparency = 1, Padding = UDim.new(-0.01, 0) })
+	ui.hand = HandFan.Container(gui, UDim2.fromScale(0.5, 0.70), UDim2.fromScale(0.58, 0.3))
 	ui.myLeader = leaderBar(UDim2.fromScale(0.02, 0.97), Vector2.new(0, 1))
 	ui.myLeader.Root.Activated:Connect(function() onLeaderClick("myLeader") end)
 
@@ -626,18 +627,29 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	})
 
 	ui.pointsBubble = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.11, 0.11), Position = UDim2.fromScale(0.895, 0.72), AnchorPoint = CENTER,
+		Size = UDim2.fromScale(0.11, 0.11), Position = UDim2.fromScale(0.87, 0.85), AnchorPoint = CENTER,
 		BackgroundColor3 = Theme.Color.Yellow, Parent = gui,
 	}, { UIKit.new("UIAspectRatioConstraint", {}), UIKit.corner(UDim.new(0.5, 0)), UIKit.stroke(nil, 4) })
 	ui.points = UIKit.label({ Text = "⚡0", Size = UDim2.fromScale(0.8, 0.6), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = ui.pointsBubble })
 	UIKit.label({
 		Text = ("พอยต์ (ดองได้ถึง %d)"):format(Config.MAX_BANKED_POINTS), Font = Theme.FontBody,
-		Size = UDim2.fromScale(0.17, 0.03), Position = UDim2.fromScale(0.895, 0.79), AnchorPoint = Vector2.new(0.5, 0), Parent = gui,
+		Size = UDim2.fromScale(0.17, 0.03), Position = UDim2.fromScale(0.87, 0.92), AnchorPoint = Vector2.new(0.5, 0), Parent = gui,
 	})
 	ui.endBtn, ui.endLabel = UIKit.button({
-		Text = "จบเทิร์น", Size = UDim2.fromScale(0.17, 0.1), Position = UDim2.fromScale(0.98, 0.97),
-		AnchorPoint = Vector2.new(1, 1), Parent = gui, OnClick = endTurn,
+		Text = "จบเทิร์น", Size = UDim2.fromScale(0.15, 0.09), Position = UDim2.fromScale(0.985, 0.375),
+		AnchorPoint = Vector2.new(1, 0.5), Parent = gui, OnClick = endTurn,
 	})
+
+	-- คลิกขวาที่แถบผู้นำ = ดูการ์ดผู้นำ (state.myLeader = "ชื่อผู้เล่น • ชื่อผู้นำ")
+	local function leaderPeek(bar, getText)
+		bar.Root.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
+			local full = getText()
+			if full then CardInspector.OpenByName((tostring(full):match("•%s*(.+)$")) or full) end
+		end)
+	end
+	leaderPeek(ui.myLeader, function() return state and state.myLeader end)
+	leaderPeek(ui.oppLeader, function() return state and state.oppLeader end)
 
 	-- รับข้อมูลจากเซิร์ฟเวอร์
 	R.StateUpdate.OnClientEvent:Connect(function(s)

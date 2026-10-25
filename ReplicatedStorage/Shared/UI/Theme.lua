@@ -42,4 +42,15 @@ Theme.Gate = {
 	Poop   = { Text = "💩 กลายเป็นก้อนอึ",     Color = Color3.fromRGB(140, 90, 50) },
 }
 
+Theme.RarityText = { Common = "ธรรมดา", Rare = "หายาก", Epic = "มหากาพย์", Legend = "ตำนาน", Mystic = "ลึกลับ" }
+Theme.TypeText = { Character = "ตัวละคร", Spell = "เวท", Weapon = "อาวุธ", Leader = "ผู้นำ" }
+-- คำอธิบายคีย์เวิร์ด (ตรงกับ Match.EnterField / CardEffects.OnEnter / CardEffects.OnDeath)
+Theme.KeywordDesc = {
+	Rush = "ลงสนามแล้วโจมตีได้ทันที ไม่ต้องรอเทิร์นถัดไป",
+	Taunt = "ศัตรูต้องโจมตีตัวนี้ก่อน ถึงจะตีตัวอื่นหรือผู้นำได้",
+	Necro = "ตอนลงสนาม: ขุดตัวละครจากสุสานของเราสุ่ม 1 ใบ กลับขึ้นมือ (ถ้ามือยังไม่เต็ม)",
+	Unlucky = "ตอนตาย: โยนเหรียญ หัว = สุ่มทำดาเมจ 3 ใส่ศัตรู / ก้อย = ผู้นำเราโดนเอง 3",
+	Steal = "ตอนลงสนาม: ขโมยพอยต์ที่ศัตรูดองไว้ สูงสุด 2",
+}
+
 return Theme

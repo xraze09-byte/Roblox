@@ -1,6 +1,27 @@
 -- ReplicatedStorage/Shared/UI/CardView
 local Theme = require(script.Parent.Theme)
 local UIKit = require(script.Parent.UIKit)
+local TweenService = game:GetService("TweenService")
+local function Inspector() return require(script.Parent.CardInspector) end -- require ตอนใช้ เลี่ยง require วนกัน
+
+local SHINY = { Epic = 0.7, Legend = 0.5, Mystic = 0.35 } -- ค่ายิ่งน้อย แสงยิ่งแรง
+local function addShine(art, strength)
+	local shine = UIKit.new("Frame", {
+		Name = "Shine", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = 3, Parent = art,
+	}, { UIKit.corner(UDim.new(0.08, 0)) })
+	local g = UIKit.new("UIGradient", {
+		Rotation = 25, Offset = Vector2.new(-1, 0), Parent = shine,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.42, 1),
+			NumberSequenceKeypoint.new(0.5, strength),
+			NumberSequenceKeypoint.new(0.58, 1), NumberSequenceKeypoint.new(1, 1),
+		}),
+	})
+	local tw = TweenService:Create(g, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 2.5 + math.random()), { Offset = Vector2.new(1, 0) })
+	tw:Play()
+	shine.Destroying:Once(function() tw:Cancel() end)
+end
 
 local CardView = {}
 CardView.__index = CardView
@@ -54,6 +75,11 @@ function CardView.new(card, opts)
 		AnchorPoint = CENTER, BackgroundColor3 = Theme.Color.CardBg, Parent = root,
 	}, { UIKit.corner(UDim.new(0.08, 0)) })
 	body:SetAttribute("BaseSize", body.Size)
+	self.Shadow = UIKit.new("Frame", {
+		Name = "Shadow", Size = UDim2.fromScale(0.96, 0.96), Position = UDim2.fromScale(0.52, 0.535),
+		AnchorPoint = CENTER, BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55,
+		ZIndex = 0, Parent = root,
+	}, { UIKit.corner(UDim.new(0.08, 0)) })
 
 	self.Stroke = UIKit.stroke(self.RarityColor, 4)
 	self.Stroke.Parent = body
@@ -96,6 +122,7 @@ function CardView.new(card, opts)
 		Text = "", Size = UDim2.fromScale(0.95, 0.24), Position = UDim2.fromScale(0.5, 0.98),
 		AnchorPoint = Vector2.new(0.5, 1), Parent = self.Art, StrokeThickness = 1,
 	})
+	if SHINY[card.Rarity] then addShine(self.Art, SHINY[card.Rarity]) end
 
 	UIKit.label({
 		Text = card.Name or "???", Color = Theme.Color.Outline, StrokeThickness = 0,
@@ -113,13 +140,30 @@ function CardView.new(card, opts)
 		self.Hp = bubble(body, Theme.Color.Green, UDim2.fromScale(1, 1), Vector2.new(0.75, 0.75))
 	end
 
-	-- ปุ่มใสคลุมการ์ด: คลิก = เลือก, คลิกขวา/กดค้าง = ซูมดู
+	-- opts: Static (ไม่ให้เปิดดู), NoHover, InspectList, InspectIndex
 	local hit = UIKit.new("TextButton", { Name = "Hitbox", Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 5, Parent = body })
-	hit.Activated:Connect(function() if opts.OnClick then opts.OnClick(self) end end)
-	hit.MouseButton2Click:Connect(function() if opts.OnInspect then opts.OnInspect(self) end end)
-	hit.TouchLongPress:Connect(function(_, inputState)
-		if inputState == Enum.UserInputState.Begin and opts.OnInspect then opts.OnInspect(self) end
+	local function doInspect()
+		if opts.Static then return end
+		if opts.OnInspect then opts.OnInspect(self)
+		else Inspector().Open(self.Card, opts.InspectList, opts.InspectIndex) end
+	end
+	local longPressed = false
+	hit.Activated:Connect(function()
+		if longPressed then longPressed = false return end -- กันกดค้างแล้วไปเลือกการ์ดซ้อน
+		if opts.OnClick then opts.OnClick(self) end
 	end)
+	hit.MouseButton2Click:Connect(doInspect)
+	hit.TouchLongPress:Connect(function(_, inputState)
+		if inputState == Enum.UserInputState.Begin then longPressed = true doInspect() end
+	end)
+	if not opts.Static then
+		Inspector().Track(hit, doInspect)
+		if not opts.NoHover then
+			local hover = UIKit.new("UIScale", { Parent = body })
+			hit.MouseEnter:Connect(function() UIKit.tween(hover, 0.12, { Scale = 1.06 }) root.ZIndex = 10 end)
+			hit.MouseLeave:Connect(function() UIKit.tween(hover, 0.12, { Scale = 1 }) root.ZIndex = 1 end)
+		end
+	end
 
 	self.Frame, self.Body = root, body
 	self:Update(card)
@@ -189,6 +233,7 @@ local DEATH_STYLES = {
 }
 
 function CardView:Die()
+	if self.Shadow then self.Shadow.Visible = false end
 	UIKit.sfx("Death")
 	if UIKit.Settings.VFX then
 		DEATH_STYLES[math.random(#DEATH_STYLES)](self)

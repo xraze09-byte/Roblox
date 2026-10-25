@@ -7,6 +7,7 @@ local UIFolder = Shared:WaitForChild("UI")
 local Theme = require(UIFolder:WaitForChild("Theme"))
 local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local CardView = require(UIFolder:WaitForChild("CardView"))
+local CardInspector = require(UIFolder:WaitForChild("CardInspector"))
 local CardData = require(Shared:WaitForChild("CardData"))
 local Decks = require(Shared:WaitForChild("Decks"))
 local QueueRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Queue")
@@ -55,15 +56,22 @@ local function buildCardGrid(content, ids)
 	end
 	scroller:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize)
 	resize()
-	for i, id in ipairs(ids) do
+	local cards = {}
+	for _, id in ipairs(ids) do
 		local data = CardData[id]
 		if data then
 			local card = table.clone(data)
 			card.Id = id
-			local view = CardView.new(card, { Size = UDim2.fromScale(1, 1) })
-			view.Frame.LayoutOrder = i
-			view.Frame.Parent = scroller
+			table.insert(cards, card)
 		end
+	end
+	for i, card in ipairs(cards) do
+		local view = CardView.new(card, {
+			Size = UDim2.fromScale(1, 1), InspectList = cards, InspectIndex = i,
+			OnClick = function() CardInspector.Open(card, cards, i) end,
+		})
+		view.Frame.LayoutOrder = i
+		view.Frame.Parent = scroller
 	end
 end
 
@@ -173,20 +181,23 @@ function LobbyUI.Build(hud, overlay)
 	player:GetAttributeChangedSignal("Streak"):Connect(refreshStats)
 	refreshStats()
 
-	-- เมนูขวา
+	-- เมนูล่าง (dock)
 	local menu = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.15, 0.62), Position = UDim2.fromScale(0.98, 0.5), AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundTransparency = 1, Parent = hud,
+		Size = UDim2.fromScale(0.62, 0.13), Position = UDim2.fromScale(0.5, 0.97), AnchorPoint = Vector2.new(0.5, 1),
+		BackgroundColor3 = Theme.Color.Outline, BackgroundTransparency = 0.35, Parent = hud,
 	}, {
-		UIKit.new("UIListLayout", {
-			Padding = UDim.new(0.025, 0), SortOrder = Enum.SortOrder.LayoutOrder,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
+		UIKit.corner(UDim.new(0.3, 0)),
+		UIKit.new("UIPadding", { PaddingTop = UDim.new(0.1, 0), PaddingBottom = UDim.new(0.1, 0) }),
+		UIKit.new("UIGridLayout", {
+			CellSize = UDim2.fromScale(0.18, 1), CellPadding = UDim2.fromScale(0.015, 0),
+			FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
 		}),
 	})
 	for i, item in ipairs(MENU) do
 		local panel
 		local btn = UIKit.button({
-			Text = item.Text, Color = item.Color, Size = UDim2.fromScale(1, 0.18), Parent = menu,
+			Text = item.Text, Color = item.Color, Size = UDim2.fromScale(1, 1), Parent = menu,
 			OnClick = function()
 				if not panel then
 					panel = UIKit.panel(overlay, item.Title, item.Color)
@@ -200,7 +211,7 @@ function LobbyUI.Build(hud, overlay)
 
 	-- ส่วนเริ่มเล่น
 	local play = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.42, 0.26), Position = UDim2.fromScale(0.5, 0.97), AnchorPoint = Vector2.new(0.5, 1),
+		Size = UDim2.fromScale(0.42, 0.26), Position = UDim2.fromScale(0.5, 0.83), AnchorPoint = Vector2.new(0.5, 1),
 		BackgroundTransparency = 1, Parent = hud,
 	})
 	ui.searchText = UIKit.label({
@@ -216,6 +227,16 @@ function LobbyUI.Build(hud, overlay)
 		end,
 	})
 	ui.leaderDesc = UIKit.label({ Font = Theme.FontBody, Size = UDim2.fromScale(1, 0.14), Position = UDim2.fromScale(0, 0.27), Parent = play })
+	local peek = UIKit.new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = ui.leaderDesc })
+	peek.Activated:Connect(function()
+		local leaders = {}
+		for i, id in ipairs(Decks.Leaders) do
+			local c = table.clone(CardData[id])
+			c.Id = id
+			leaders[i] = c
+		end
+		CardInspector.Open(leaders[leaderIndex], leaders, leaderIndex)
+	end)
 	UIKit.button({
 		Text = "🤖 ซ้อมกับบอท", Color = Theme.Color.Green, Size = UDim2.fromScale(0.48, 0.42),
 		Position = UDim2.fromScale(0, 0.45), Parent = play, OnClick = function() queue("Bot") end,
