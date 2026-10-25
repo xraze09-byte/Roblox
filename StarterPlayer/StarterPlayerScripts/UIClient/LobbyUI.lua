@@ -31,27 +31,33 @@ function LobbyUI.Build(hud, overlay)
 	local root = S.new("Frame", { Name = "LobbyRoot", BackgroundTransparency = 1,
 		Size = UDim2.fromScale(1, 1), Parent = backdrop }, { S.pad(14) })
 
-	-- แถบบน: ชื่อเกม + แสดงเพชร
-	local topBar = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 0.08), Parent = root })
-	S.text({ Font = S.Font.Heavy, Text = "GAWA CARDS", Color = S.C.Accent, Max = 28, Size = UDim2.fromScale(0.5, 1), Parent = topBar })
-	
-	local gemBox = S.new("Frame", { BackgroundColor3 = S.C.Ink, AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0), Size = UDim2.fromOffset(130, 36), Parent = topBar }, { S.corner(4) })
+	-- แถบบน: สูงคงที่ 48px (เดิมใช้ 8% ของจอ จึงหดจนตัวหนังสือหาย เมื่อหน้าต่างเตี้ย)
+	local TOP_H = 48
+	local topBar = S.new("Frame", { Name = "TopBar", BackgroundColor3 = S.C.Panel,
+		Size = UDim2.new(1, 0, 0, TOP_H), Parent = root }, { S.corner(6), S.pad(6) })
+	S.stroke(S.C.Violet, 1.5, topBar)
+	S.text({ Font = S.Font.Heavy, Text = "GAWA CARDS", Color = S.C.Accent, Max = 26,
+		Size = UDim2.new(0.5, 0, 1, 0), Parent = topBar })
+
+	local gemBox = S.new("Frame", { BackgroundColor3 = S.C.Ink, AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5), Size = UDim2.new(0, 150, 1, 0), Parent = topBar }, { S.corner(4) })
 	S.stroke(S.C.Accent, 1.5, gemBox)
-	local gemLabel = S.text({ Font = S.Font.Bold, Color = S.C.Accent, Max = 16, XAlign = "Center", Parent = gemBox })
+	local gemLabel = S.text({ Font = S.Font.Bold, Color = S.C.Accent, Max = 18, XAlign = "Center", Parent = gemBox })
 
-	-- เนื้อหาหลักตรงกลาง
-	local content = S.new("Frame", { BackgroundTransparency = 1,
-		Position = UDim2.fromScale(0, 0.09), Size = UDim2.fromScale(1, 0.9), Parent = root })
+	-- เนื้อหาหลัก: เริ่มต่อจากแถบบน กินพื้นที่ที่เหลือทั้งหมด
+	local content = S.new("Frame", { Name = "Content", BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, TOP_H + 10), Size = UDim2.new(1, 0, 1, -(TOP_H + 10)), Parent = root })
 
-	-- แท็บซ้าย: เมนูเลือกโหมด/ระบบต่างๆ (เลื่อนได้ ไม่ล้นจอ)
-	local menuF = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(0.22, 1), Parent = content }, {
-		S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+	-- แท็บซ้าย: กว้างคงที่ 150px
+	local MENU_W = 150
+	local menuF = S.new("Frame", { Name = "Menu", BackgroundTransparency = 1,
+		Size = UDim2.new(0, MENU_W, 1, 0), Parent = content }, {
+		S.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
 	})
 
 	-- หน้าต่างขวา: ทุกหน้าสร้างเป็น "page" ที่เรียงเนื้อหาลงมาเป็นแถว จึงไม่มีทางซ้อนกัน
-	local panel = S.new("Frame", { BackgroundColor3 = S.C.Panel,
-		Position = UDim2.fromScale(0.235, 0), Size = UDim2.fromScale(0.765, 1), Parent = content }, {
+	local panel = S.new("Frame", { Name = "Panel", BackgroundColor3 = S.C.Panel,
+		Position = UDim2.new(0, MENU_W + 10, 0, 0), Size = UDim2.new(1, -(MENU_W + 10), 1, 0), Parent = content }, {
 		S.corner(6), S.pad(14),
 	})
 	S.stroke(S.C.Violet, 2, panel)
@@ -63,7 +69,9 @@ function LobbyUI.Build(hud, overlay)
 	-- สร้างหน้าใหม่: คืน (page, title) โดย page เป็น Frame ที่ใช้ UIListLayout แนวตั้ง
 	local function newPage(titleText)
 		if page then page:Destroy() end
-		page = S.new("Frame", { Name = "Page", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = panel }, {
+		page = S.new("ScrollingFrame", { Name = "Page", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
+			ScrollBarThickness = 4, BorderSizePixel = 0, CanvasSize = UDim2.new(),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, Parent = panel }, {
 			S.new("UIListLayout", { Padding = UDim.new(0, ROW), SortOrder = Enum.SortOrder.LayoutOrder,
 				HorizontalAlignment = Enum.HorizontalAlignment.Center }),
 		})
@@ -74,7 +82,7 @@ function LobbyUI.Build(hud, overlay)
 	-- กล่องเลื่อนที่กินพื้นที่ที่เหลือ (ใช้ UIFlexItem ไม่ได้ทุกเวอร์ชัน จึงกำหนดสัดส่วนเอง)
 	local function scroller(parent, order, heightScale, layout)
 		local f = S.new("ScrollingFrame", { BackgroundTransparency = 1, LayoutOrder = order,
-			Size = UDim2.new(1, 0, heightScale, -40), ScrollBarThickness = 6,
+			Size = UDim2.new(1, -8, 0, math.floor(heightScale)), ScrollBarThickness = 6,
 			AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Parent = parent })
 		if layout then layout.Parent = f end
 		return f
@@ -110,7 +118,7 @@ function LobbyUI.Build(hud, overlay)
 		local pg = newPage("เลือกผู้นำและโหมดต่อสู้")
 
 		local leadersF = S.new("Frame", { BackgroundTransparency = 1, LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 100), Parent = pg }, {
+			Size = UDim2.new(1, 0, 0, 80), Parent = pg }, {
 			S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10),
 				HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }),
 		})
@@ -157,7 +165,7 @@ function LobbyUI.Build(hud, overlay)
 		show("Deck")
 		local pg = newPage(("เด็คของคุณ (ต้องครบ %d ใบ)"):format(DeckRules.Size))
 		local currentDeck = profile and profile.Deck or Decks.Starter
-		local grid = scroller(pg, 2, 0.8)
+		local grid = scroller(pg, 2, 300)
 		fillCards(grid, currentDeck)
 		S.button({ Text = "บันทึกเด็ค", Max = 16, LayoutOrder = 3, Color = S.C.Accent, TextColor = S.C.Ink,
 			Size = UDim2.new(0.4, 0, 0, 36), Parent = pg,
@@ -174,7 +182,7 @@ function LobbyUI.Build(hud, overlay)
 		S.text({ Text = ("ราคา: %d เพชร / ครั้ง หรือ %d เพชร / 10 ครั้ง"):format(Config.GACHA_COST_1, Config.GACHA_COST_10),
 			Color = S.C.TextDim, Max = 14, LayoutOrder = 2, Size = UDim2.new(1, 0, 0, 22), Parent = pg })
 
-		local resBox = scroller(pg, 3, 0.6)
+		local resBox = scroller(pg, 3, 260)
 
 		local function pull(n)
 			local ok, res = Net.invoke("Gacha", n)
@@ -201,7 +209,7 @@ function LobbyUI.Build(hud, overlay)
 	panels.Quests = function()
 		show("Quests")
 		local pg = newPage("เควสต์ประจำวัน")
-		local list = scroller(pg, 2, 0.88, S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }))
+		local list = scroller(pg, 2, 340, S.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }))
 		local quests = profile and profile.Quests and profile.Quests.List or {}
 		if #quests == 0 then
 			S.text({ Text = "กำลังโหลดเควสต์...", Color = S.C.TextDim, Max = 15, Size = UDim2.new(1, 0, 0, 30), Parent = list })
@@ -235,7 +243,7 @@ function LobbyUI.Build(hud, overlay)
 		show("Stats")
 		local pg = newPage("สถิติผู้เล่น")
 		local st = stats or Net.invoke("GetStats") or {}
-		local list = scroller(pg, 2, 0.88, S.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }))
+		local list = scroller(pg, 2, 340, S.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }))
 		local keys = {}
 		for k in st do table.insert(keys, tostring(k)) end
 		table.sort(keys)
@@ -256,7 +264,7 @@ function LobbyUI.Build(hud, overlay)
 	}
 	for i, tab in tabs do
 		tabButtons[tab.Id] = S.button({ Text = tab.Text, Max = 16, Color = S.C.Panel2, LayoutOrder = i,
-			Size = UDim2.new(1, -6, 0, 44), Parent = menuF, OnClick = function() panels[tab.Id]() end })
+			Size = UDim2.new(1, 0, 0, 32), Parent = menuF, OnClick = function() panels[tab.Id]() end })
 	end
 
 	function LobbyUI.Refresh()
