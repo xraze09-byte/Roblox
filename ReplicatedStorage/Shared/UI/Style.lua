@@ -1,38 +1,21 @@
--- ธีมเรียบ: สีน้อย ไม่มีอีโมจิ ไม่มีกราเดียนต์ ปุ่มไม่เด้ง
+-- ธีมการ์ตูนนีออน (PASULOL): ใช้พาเล็ตจาก Theme เดียวกับ UIKit
+local Theme = require(script.Parent.Theme)
+local T = Theme.Color
 local Style = {}
 
-local function font(name, fallback)
-	local ok, f = pcall(function() return Enum.Font[name] end)
-	return (ok and f) or fallback
-end
-
 Style.Font = {
-	Regular = font("BuilderSans", Enum.Font.Gotham),
-	Medium = font("BuilderSansMedium", Enum.Font.GothamMedium),
-	Bold = font("BuilderSansBold", Enum.Font.GothamBold),
-	Heavy = font("BuilderSansExtraBold", Enum.Font.GothamBlack),
+	Regular = Theme.FontBody, Medium = Theme.FontBody, Bold = Theme.Font, Heavy = Theme.Font,
 }
 
 Style.C = {
-	Bg = Color3.fromRGB(24, 20, 44),     Panel = Color3.fromRGB(40, 34, 72),
-	Panel2 = Color3.fromRGB(58, 50, 100), Line = Color3.fromRGB(104, 90, 168),
-	Felt = Color3.fromRGB(26, 62, 74),   FeltDark = Color3.fromRGB(16, 40, 50),
-	Paper = Color3.fromRGB(246, 238, 220), Ink = Color3.fromRGB(34, 28, 46),
-	InkSoft = Color3.fromRGB(112, 100, 130), Text = Color3.fromRGB(244, 240, 255),
-	TextDim = Color3.fromRGB(176, 168, 210), Accent = Color3.fromRGB(255, 170, 58),
-	Good = Color3.fromRGB(72, 200, 130), Bad = Color3.fromRGB(240, 86, 96),
-	Info = Color3.fromRGB(86, 170, 255),
-	Pink = Color3.fromRGB(255, 108, 170), Violet = Color3.fromRGB(150, 110, 255),
-	Teal = Color3.fromRGB(56, 208, 200),
+	Bg = T.TableDark, Panel = Color3.fromRGB(58, 24, 130), Panel2 = Color3.fromRGB(86, 34, 176), Line = T.Outline,
+	Felt = T.Table, FeltDark = T.TableDark, Paper = T.CardBg, Ink = T.Ink, InkSoft = Color3.fromRGB(72, 60, 96),
+	Text = T.White, TextDim = Color3.fromRGB(205, 195, 240), Accent = T.Yellow, Good = T.Green, Bad = T.Red,
+	Info = T.Blue, Pink = T.Pink, Violet = T.Purple, Teal = Color3.fromRGB(0, 232, 200),
 }
-Style.Rarity = {
-	Common = Color3.fromRGB(170, 168, 184), Rare = Color3.fromRGB(70, 150, 255),
-	Epic = Color3.fromRGB(184, 100, 255), Legend = Color3.fromRGB(255, 190, 50), Mystic = Color3.fromRGB(255, 90, 150),
-}
-Style.Element = {
-	Sati = Color3.fromRGB(60, 150, 220), Biao = Color3.fromRGB(226, 76, 70),
-	Muen = Color3.fromRGB(150, 100, 230), Gawa = Color3.fromRGB(230, 170, 50),
-}
+Style.Rarity = Theme.Rarity
+Style.Element = {} -- Color3 ต่อธาตุ (Theme.Element เป็นตาราง {Text, Color})
+for id, e in pairs(Theme.Element) do Style.Element[id] = e.Color end
 Style.Name = {
 	Type = { Character = "ตัวละคร", Spell = "เวท", Weapon = "อาวุธ", Leader = "ผู้นำ" },
 	Element = { Sati = "สติ", Biao = "เบียว", Muen = "มึน", Gawa = "กาว" },
@@ -52,30 +35,37 @@ function Style.new(class, props, children)
 	return inst
 end
 
-function Style.corner(r) return Style.new("UICorner", { CornerRadius = UDim.new(0, r or 4) }) end
+function Style.corner(r)
+	return Style.new("UICorner", { CornerRadius = typeof(r) == "UDim" and r or UDim.new(0, r or 4) })
+end
 function Style.pad(px)
 	local u = UDim.new(0, px)
 	return Style.new("UIPadding", { PaddingTop = u, PaddingBottom = u, PaddingLeft = u, PaddingRight = u })
 end
 function Style.stroke(color, thickness, parent)
 	return Style.new("UIStroke", {
-		Color = color, Thickness = thickness or 1,
+		Color = color or Style.C.Line, Thickness = thickness or 3, LineJoinMode = Enum.LineJoinMode.Round,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = parent,
 	})
 end
 
+local function isThai(str) return type(str) == "string" and (str:find("\224\184") or str:find("\224\185")) ~= nil end
+
 function Style.text(p)
 	local lbl = Style.new("TextLabel", {
 		Name = p.Name or "Text", BackgroundTransparency = 1, Text = p.Text or "",
-		Font = p.Font or Style.Font.Regular, TextColor3 = p.Color or Style.C.Text,
+		Font = p.Font or (isThai(p.Text) and Theme.FontThai or Style.Font.Regular), TextColor3 = p.Color or Style.C.Text,
 		TextScaled = true, TextWrapped = p.Wrap ~= false,
 		TextXAlignment = Enum.TextXAlignment[p.XAlign or "Left"],
 		TextYAlignment = Enum.TextYAlignment[p.YAlign or "Center"],
 		Position = p.Position or UDim2.new(), Size = p.Size or UDim2.fromScale(1, 1),
-		AnchorPoint = p.AnchorPoint or Vector2.zero, ZIndex = p.ZIndex or 1,
+		AnchorPoint = p.AnchorPoint or Vector2.zero, Rotation = p.Tilt or 0, ZIndex = p.ZIndex or 1,
 		LayoutOrder = p.LayoutOrder or 0, Parent = p.Parent,
 	})
 	Style.new("UITextSizeConstraint", { MaxTextSize = p.Max or 18, MinTextSize = p.Min or 6, Parent = lbl })
+	if p.Stroke ~= false then
+		Style.new("UIStroke", { Color = Style.C.Line, Thickness = p.StrokeThickness or 2, LineJoinMode = Enum.LineJoinMode.Round, Parent = lbl })
+	end
 	return lbl
 end
 
@@ -83,7 +73,7 @@ function Style.button(p)
 	local base = p.Color or Style.C.Panel2
 	local btn = Style.new("TextButton", {
 		Name = p.Name or "Button", AutoButtonColor = false, Text = p.Text or "",
-		Font = p.Font or Style.Font.Bold, TextColor3 = p.TextColor or Style.C.Text,
+		Font = p.Font or (isThai(p.Text) and Theme.FontThai or Style.Font.Bold), TextColor3 = p.TextColor or Style.C.Text,
 		TextScaled = true, TextWrapped = true, BackgroundColor3 = base,
 		Position = p.Position or UDim2.new(), Size = p.Size or UDim2.fromScale(1, 1),
 		AnchorPoint = p.AnchorPoint or Vector2.zero, LayoutOrder = p.LayoutOrder or 0,
@@ -199,7 +189,8 @@ end
 Style.toastParent = nil
 local holder, seq, lastText, lastAt = nil, 0, nil, 0
 local KIND = {
-	info = Style.C.Panel2, good = Color3.fromRGB(44, 68, 48), bad = Color3.fromRGB(84, 40, 36),
+	info = Style.C.Panel2, good = Color3.fromRGB(24, 120, 70), bad = Color3.fromRGB(150, 30, 50),
+	warn = Color3.fromRGB(170, 100, 0),
 }
 function Style.toast(text, kind)
 	local parent = Style.toastParent
@@ -229,7 +220,7 @@ function Style.toast(text, kind)
 	while #items >= 3 do table.remove(items, 1):Destroy() end
 	seq += 1
 	local f = Style.new("Frame", {
-		BackgroundColor3 = KIND[kind or "info"] or KIND.info, Size = UDim2.new(1, 0, 0, 34),
+		BackgroundColor3 = KIND[string.lower(tostring(kind or "info"))] or KIND.info, Size = UDim2.new(1, 0, 0, 34),
 		LayoutOrder = seq, ZIndex = 50, Parent = holder,
 	}, { Style.corner(4) })
 	Style.stroke(Style.C.Line, 1, f)

@@ -9,13 +9,24 @@ local S = require(Shared:WaitForChild("UI"):WaitForChild("Style"))
 local Net = require(script.Parent:WaitForChild("Net"))
 local CardFace = require(script.Parent:WaitForChild("CardFace"))
 local Inspect = require(script.Parent:WaitForChild("Inspect"))
+-- หน้าจอใหม่ (โหมดตัวอย่าง): โหลดแบบ pcall เพื่อไม่ให้ล็อบบี้พังถ้าไฟล์ใดมีปัญหา
+local function tryRequire(name)
+	local inst = script.Parent:FindFirstChild(name)
+	if not inst then return nil end
+	local ok, mod = pcall(require, inst)
+	if not ok then warn("[LobbyUI] โหลด " .. name .. " ไม่ได้: " .. tostring(mod)) return nil end
+	return mod
+end
+local BountyBoard = tryRequire("BountyBoard")
+local TournamentBracket = tryRequire("TournamentBracket")
+local FarmUI = tryRequire("FarmUI")
 
 local LobbyUI = {}
 
-local TAB_COLOR = { Battle = S.C.Bad, Deck = S.C.Info, Gacha = S.C.Pink, Quests = S.C.Good, Stats = S.C.Violet }
+local TAB_COLOR = { Battle = S.C.Bad, Deck = S.C.Info, Gacha = S.C.Pink, Quests = S.C.Good, Stats = S.C.Violet, Fun = S.C.Teal }
 local TABS = {
 	{ Id = "Battle", Text = "ต่อสู้" }, { Id = "Deck", Text = "เด็ค" }, { Id = "Gacha", Text = "กาชา" },
-	{ Id = "Quests", Text = "เควสต์" }, { Id = "Stats", Text = "สถิติ" },
+	{ Id = "Quests", Text = "เควสต์" }, { Id = "Stats", Text = "สถิติ" }, { Id = "Fun", Text = "สนุก" },
 }
 -- สีประจำผู้นำ (เดิมทุกใบเป็นสีเทาเหมือนกันหมด)
 local LEADER_STYLE = {
@@ -306,6 +317,25 @@ function LobbyUI.Build(hud, overlay)
 			S.text({ Text = STAT_NAMES[k] or k, Max = 14, Size = UDim2.fromScale(0.62, 1), Parent = row })
 			S.text({ Font = S.Font.Bold, Text = tostring(st[k]), Color = S.C.Accent, Max = 14, XAlign = "Right",
 				Position = UDim2.fromScale(0.62, 0), Size = UDim2.fromScale(0.38, 1), Parent = row })
+		end
+	end
+
+	-- ===== 6) สนุก: หน้าจอใหม่ (ตอนนี้เป็นข้อมูลตัวอย่าง ยังไม่ต่อเซิร์ฟเวอร์) =====
+	panels.Fun = function()
+		local c = newPage("โหมดสนุก (ตัวอย่าง)")
+		local list = S.scroll({ Parent = c, Size = UDim2.fromScale(1, 1), Gap = 8 })
+		local entries = {
+			{ Text = "ประกาศจับ (Bounty)", Color = S.C.Accent, Mod = BountyBoard },
+			{ Text = "ทัวร์นาเมนต์", Color = S.C.Info, Mod = TournamentBracket },
+			{ Text = "ฟาร์ม", Color = S.C.Good, Mod = FarmUI },
+		}
+		for i, e in entries do
+			S.button({ Text = e.Text, Max = 18, Color = e.Color, LayoutOrder = i, Size = UDim2.new(1, -8, 0, 48), Parent = list,
+				OnClick = function()
+					if not e.Mod then S.toast("หน้านี้ยังโหลดไม่ได้", "bad") return end
+					local ok, err = pcall(e.Mod.Open, overlay)
+					if not ok then warn("[LobbyUI] เปิด " .. e.Text .. " ไม่ได้: " .. tostring(err)); S.toast("เปิดหน้านี้ไม่ได้", "bad") end
+				end })
 		end
 	end
 
