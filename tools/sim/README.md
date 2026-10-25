@@ -7,4 +7,6 @@ Runs `ServerStorage/Modules/Match.lua` with two `IsBot` players on a virtual clo
 - `t_sim.lua`  500+ games, checks invariants every virtual second (points, field/hand limits, card conservation, duplicate Uids, winner vs HP).
 - `t_comp.lua` compares first-player win rate under candidate balance changes.
 
-Last run (1500 games): 0 invariant violations, 0 stuck games, 0 errors; first player won ~70%.
+Last run (500 games): 0 invariant violations, 0 stuck games, 0 errors; first player won ~50% (249/500) after the balance change below.
+
+Balance (Config.lua): `FIRST_PLAYER_SKIPS_DRAW = true` and `SECOND_PLAYER_BONUS_POINTS = 1` bring the first-player win rate from ~70% down to ~51% (t_comp, 1000 games). Set them to `false` / `0` to restore the old rules.

@@ -276,7 +276,13 @@ end
 
 function Match:StartTurn(player)
 	if self.ended then return end
-	if not self.firstPlayer then self.firstPlayer = player end
+	local isOpeningTurn = not self.firstPlayer
+	if isOpeningTurn then
+		self.firstPlayer = player
+		-- บาลานซ์: ชดเชยผู้เล่นคนที่สอง (ดู Config)
+		local other = self.sides[self:Opponent(player)]
+		if other then other.bonusPoints += (Config.SECOND_PLAYER_BONUS_POINTS or 0) end
+	end
 	self.current = player
 	self.turnToken += 1
 	local token = self.turnToken
@@ -314,7 +320,9 @@ function Match:StartTurn(player)
 		self:Notify("🎲 สนามเต็ม! การ์ดในช่องเกตต้องรอก่อน")
 	end
 
-	local fatigued = self:Draw(side, Config.DRAW_PER_TURN)
+	local drawCount = Config.DRAW_PER_TURN
+	if isOpeningTurn and Config.FIRST_PLAYER_SKIPS_DRAW then drawCount = 0 end
+	local fatigued = self:Draw(side, drawCount)
 	self:Commit(fatigued and "FATIGUE" or nil)
 	if self.ended then return end
 
