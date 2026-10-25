@@ -1,6 +1,6 @@
 -- ReplicatedStorage/Shared/Config (ModuleScript)
 return {
-	DECK_COMPOSITION = { Character = 12, Spell = 7, Weapon = 5 }, -- + ผู้นำ 1 = 25 ใบ
+	DECK_COMPOSITION = { Character = 12, Spell = 7, Weapon = 5 }, -- ตัวละคร+เวท+อาวุธ = 24 ใบ (ผู้นำเลือกแยก)
 	MAX_SHIELDS_IN_DECK = 2,
 	STARTING_HAND = 3,
 	POINTS_PER_TURN = 5,
@@ -18,4 +18,15 @@ return {
 	REWARD_LOSE_PVP = 5,
 	REWARD_WIN_BOT = 10,
 	BOUNTY_PER_STREAK = 10,
+
+	-- เด็ค: จำนวนสูงสุดต่อใบตามความหายาก (คลังเก็บได้เท่านี้ด้วย)
+	MAX_COPIES = { Common = 2, Rare = 2, Epic = 1, Legend = 1, Mystic = 1 },
+
+	-- กาชา
+	GACHA_COST_1 = 50,
+	GACHA_COST_10 = 450,
+	GACHA_RATES = { Common = 68, Rare = 24, Epic = 7, Legend = 1 },
+	GACHA_EPIC_PITY = 10,
+	GACHA_LEGEND_PITY = 60,
+	GACHA_DUPE_REFUND = { Common = 5, Rare = 15, Epic = 40, Legend = 100 },
 }

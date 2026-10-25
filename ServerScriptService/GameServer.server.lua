@@ -1,17 +1,15 @@
--- ServerScriptService/GameServer (Script)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
+local ServerScriptService = game:GetService("ServerScriptService")
 
--- 0) ลบสคริปต์เก่าที่ Rojo ไม่ได้ลบให้ (ถ้าค้างอยู่ จะแย่งรับ Remote กับสคริปต์นี้)
+-- 0) ลบสคริปต์เก่าที่ค้าง
 do
-	local ServerScriptService = game:GetService("ServerScriptService")
-	local ServerStorage = game:GetService("ServerStorage")
 	local function purge(parent, name)
 		local old = parent and parent:FindFirstChild(name)
 		if old then
-			warn(("[GameServer] พบ %s เก่าค้างอยู่ ลบทิ้งให้แล้ว (ลบออกจาก Studio ด้วยเพื่อไม่ให้เตือนซ้ำ)"):format(name))
+			warn(("[GameServer] พบ %s เก่าค้างอยู่ ลบทิ้งให้แล้ว"):format(name))
 			old:Destroy()
 		end
 	end
@@ -20,10 +18,10 @@ do
 	purge(ServerStorage:FindFirstChild("Modules"), "MatchRegistry")
 end
 
--- 1) สร้าง Remotes อัตโนมัติ (ต้องทำก่อน require Match)
+-- 1) Remotes
 local REMOTES = {
-	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats" },
-	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify" },
+	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats", "GetProfile", "SaveDeck", "Gacha", "ClaimQuest" },
+	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify", "ProfileChanged" },
 }
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not Remotes then
@@ -33,10 +31,7 @@ end
 for className, names in REMOTES do
 	for _, name in names do
 		local existing = Remotes:FindFirstChild(name)
-		if existing and not existing:IsA(className) then
-			existing:Destroy()
-			existing = nil
-		end
+		if existing and not existing:IsA(className) then existing:Destroy() existing = nil end
 		if not existing then
 			local r = Instance.new(className)
 			r.Name = name
@@ -53,36 +48,38 @@ for _, child in Remotes:GetChildren() do
 end
 Remotes.Parent = ReplicatedStorage
 
--- 2) โหลดโมดูล
+-- 2) โมดูล
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local CardData = require(Shared.CardData)
 local Decks = require(Shared.Decks)
+local DeckRules = require(Shared.DeckRules)
 local Modules = ServerStorage:WaitForChild("Modules")
 local Match = require(Modules.Match)
 local DataService = require(Modules.DataService)
 local Stats = require(Modules.StatsService)
+local Guard = require(Modules.Guard)
+local GachaService = require(Modules.GachaService)
+local QuestService = require(Modules.QuestService)
 
-local ActiveMatches = {} -- [player] = match
-local waiting = nil      -- { player, leader }
-local lastCall = {}
-
-local function allow(player, action, gap)
-	local now = os.clock()
-	local t = lastCall[player]
-	if not t then
-		t = {}
-		lastCall[player] = t
+-- 2.1) รวม Broadcast ให้เหลือครั้งเดียวต่อรอบ (ตัวการหลักที่ทำให้แลกตอนกดรัว)
+do
+	local rawBroadcast = Match.Broadcast
+	Match.Broadcast = function(self)
+		if self._broadcastQueued then return end
+		self._broadcastQueued = true
+		task.defer(function()
+			self._broadcastQueued = false
+			local ok, err = pcall(rawBroadcast, self)
+			if not ok then warn("[GameServer] Broadcast error: " .. tostring(err)) end
+		end)
 	end
-	if t[action] and now - t[action] < (gap or 0.1) then return false end
-	t[action] = now
-	return true
 end
 
-local function isId(v)
-	return typeof(v) == "string" and #v > 0 and #v <= 64
-end
+local ActiveMatches = {}
+local waiting = nil
 
+local function isId(v) return typeof(v) == "string" and #v > 0 and #v <= 64 end
 local function isLeader(id)
 	local c = isId(id) and CardData[id]
 	return c and c.Type == "Leader"
@@ -97,9 +94,45 @@ local function lockMovement(player, locked)
 	hum.JumpPower = locked and 0 or StarterPlayer.CharacterJumpPower
 end
 
--- 3) จบแมตช์: แจกเพชร, บันทึกชนะติดกัน และค่าหัว
--- บันทึกสถิติแมตช์ของผู้เล่นหนึ่งคน (won: true/false/nil = เสมอ)
--- reason: LEADER_DOWN | FATIGUE | AFK_LIGHTNING | LEFT | SURRENDER
+-- 3) โปรไฟล์ / เควสต์
+local function snapshot(player)
+	local data = DataService.GetData(player)
+	if not data then return nil end
+	QuestService.Ensure(data, player.UserId)
+	return {
+		Gems = data.Gems, Collection = table.clone(data.Collection), Deck = table.clone(data.Deck),
+		Pity = table.clone(data.Pity), Quests = QuestService.View(data),
+	}
+end
+
+local pushPending = {}
+local function pushProfile(player)
+	if typeof(player) ~= "Instance" or pushPending[player] then return end
+	pushPending[player] = true
+	task.delay(0.2, function()
+		pushPending[player] = nil
+		if player.Parent then
+			local snap = snapshot(player)
+			if snap then Remotes.ProfileChanged:FireClient(player, snap) end
+		end
+	end)
+end
+DataService.OnChanged = pushProfile
+
+local function trackQuest(player, event, amount)
+	if typeof(player) ~= "Instance" then return end
+	local data = DataService.GetData(player)
+	if data and QuestService.Track(data, player.UserId, event, amount or 1) then pushProfile(player) end
+end
+
+local function deckFor(player)
+	if typeof(player) ~= "Instance" then return Decks.Starter end
+	local data = DataService.GetData(player)
+	if data and DeckRules.Validate(data.Deck, data.Collection) then return table.clone(data.Deck) end
+	return Decks.Starter
+end
+
+-- 4) สถิติ / จบแมตช์
 local function recordMatchStats(m, player, won, reason, gems, bounty)
 	local data = DataService.GetData(player)
 	if not data then return end
@@ -120,16 +153,10 @@ local function recordMatchStats(m, player, won, reason, gems, bounty)
 	elseif won == false then
 		Stats.Add(data, "LossSec", sec)
 	end
-
-	-- ได้เล่นก่อนหรือไม่ (ผู้เล่นคนแรกที่ได้เทิร์น)
-	if m.firstPlayer then
-		if m.firstPlayer == player then
-			Stats.Add(data, "MatchesGoingFirst")
-			if won == true then Stats.Add(data, "WinsGoingFirst") end
-		end
+	if m.firstPlayer == player then
+		Stats.Add(data, "MatchesGoingFirst")
+		if won == true then Stats.Add(data, "WinsGoingFirst") end
 	end
-
-	-- สาเหตุที่จบ (นับให้ฝั่งที่เป็นต้นเหตุเท่านั้น)
 	if won == false then
 		if reason == "SURRENDER" then Stats.Add(data, "Surrenders")
 		elseif reason == "AFK_LIGHTNING" then Stats.Add(data, "AfkLosses")
@@ -137,7 +164,6 @@ local function recordMatchStats(m, player, won, reason, gems, bounty)
 	elseif won == true and reason == "LEFT" then
 		Stats.Add(data, "OpponentLeft")
 	end
-
 	if side then
 		Stats.Leader(data, side.leader.Id, "Matches")
 		Stats.Leader(data, side.leader.Id, outcome .. "s")
@@ -163,26 +189,27 @@ local function onMatchEnded(m, winner, reason)
 		DataService.RecordResult(loser, false)
 		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_PVP + bounty)
 		rewards[loser] = DataService.AddGems(loser, Config.REWARD_LOSE_PVP)
-		if bounty > 0 then m:Notify(("💰 ล้มคนติดค่าหัวได้! โบนัส %d เพชร"):format(bounty), "Yellow") end
+		if bounty > 0 then m:Notify(("ล้มคนติดค่าหัวได้ โบนัส %d เพชร"):format(bounty), "Yellow") end
 	elseif typeof(winner) == "Instance" then
 		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_BOT)
 	end
-
-	-- สถิติ: บอทไม่มีโปรไฟล์ จึงถูกข้ามใน recordMatchStats เอง
-	-- (กติกาปัจจุบันไม่มีเสมอ: CheckWinner ตัดสินผู้ชนะเสมอ จึงไม่เรียกด้วย won=nil)
 	for _, p in m.players do
 		if typeof(p) == "Instance" then
 			local isWinner = p == winner
-			local ok, err = pcall(recordMatchStats, m, p, isWinner, reason, rewards[p],
-				isWinner and bounty or 0)
+			local ok, err = pcall(recordMatchStats, m, p, isWinner, reason, rewards[p], isWinner and bounty or 0)
 			if not ok then warn("[GameServer] บันทึกสถิติไม่สำเร็จ: " .. tostring(err)) end
+			trackQuest(p, "MatchPlayed")
+			if isWinner then
+				trackQuest(p, "MatchWon")
+				if m.Mode == "PvP" then trackQuest(p, "PvPWon") end
+			end
 		end
 	end
 	return rewards
 end
 
 local function startMatch(p1, leader1, p2, leader2, mode)
-	local ok, m = pcall(Match.new, p1, p2, Decks.Starter, Decks.Starter, leader1, leader2)
+	local ok, m = pcall(Match.new, p1, p2, deckFor(p1), deckFor(p2), leader1, leader2)
 	if not ok then
 		warn("[GameServer] สร้างแมตช์ไม่สำเร็จ: " .. tostring(m))
 		return false
@@ -209,23 +236,16 @@ local function startMatch(p1, leader1, p2, leader2, mode)
 	return true
 end
 
+-- คำสั่งในแมตช์: ล็อก "match" ต่อผู้เล่น (ไม่ warn ตอนถูกปฏิเสธ เพราะทำให้เซิร์ฟช้าเวลาโดนสแปม)
 local function guarded(player, method, ...)
 	local m = ActiveMatches[player]
 	if not m or m.ended then return false, "NO_MATCH" end
-	local ok, a, b = pcall(m[method], m, player, ...)
-	if not ok then
-		warn(("[GameServer] %s error: %s"):format(method, tostring(a)))
-		return false, "SERVER_ERROR"
-	end
-	if a ~= true then
-		warn(("[GameServer] %s ปฏิเสธ %s: %s"):format(method, player.Name, tostring(b)))
-	end
+	local a, b = Guard.Run(player, "match", m[method], m, player, ...)
 	return a == true, b
 end
 
--- 4) Remotes
-Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
-	if not allow(player, "Queue", 0.5) then return false, "SLOW_DOWN" end
+-- 5) Remotes
+local function queueImpl(player, mode, leaderId)
 	if mode == "Cancel" then
 		if waiting and waiting.player == player then
 			waiting = nil
@@ -241,7 +261,7 @@ Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
 	if mode == "Bot" then
 		if waiting and waiting.player == player then waiting = nil end
 		Stats.Add(DataService.GetData(player), "QueueBot")
-		local bot = { Name = "หุ่นกระบอกโง่ๆ 🤖", IsBot = true }
+		local bot = { Name = "หุ่นฝึกซ้อม", IsBot = true }
 		local botLeader = Decks.Leaders[math.random(#Decks.Leaders)]
 		if not startMatch(player, leaderId, bot, botLeader, "Bot") then return false, "SERVER_ERROR" end
 		return true, "STARTED"
@@ -252,7 +272,6 @@ Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
 	if other and other.player ~= player and other.player.Parent and not ActiveMatches[other.player] then
 		waiting = nil
 		if not startMatch(other.player, other.leader, player, leaderId, "PvP") then return false, "SERVER_ERROR" end
-		-- คนที่รออยู่ก่อน: นับเวลารอ | คนที่เพิ่งเข้า: จับคู่ได้ทันที (รอ 0 วินาที)
 		local waited = math.max(0, math.floor(os.clock() - (other.since or os.clock())))
 		local d1, d2 = DataService.GetData(other.player), DataService.GetData(player)
 		Stats.Add(d1, "QueueMatched") Stats.Add(d1, "QueueWaitSec", waited) Stats.Add(d1, "QueueWaitCount")
@@ -263,33 +282,96 @@ Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
 	return true, "WAITING"
 end
 
+Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
+	if not Guard.Allow(player, "Queue", 0.5) then return false, "SLOW_DOWN" end
+	return Guard.Run(player, "queue", queueImpl, player, mode, leaderId)
+end
+
 Remotes.GetStats.OnServerInvoke = function(player)
-	if not allow(player, "GetStats", 1) then return nil end
+	if not Guard.Allow(player, "GetStats", 1) then return nil end
 	return DataService.GetStats(player)
 end
 
+Remotes.GetProfile.OnServerInvoke = function(player)
+	if not Guard.Allow(player, "GetProfile", 0.5) then return nil end
+	return snapshot(player)
+end
+
 Remotes.PlayCard.OnServerInvoke = function(player, uid, target)
-	if not allow(player, "PlayCard") then return false, "SLOW_DOWN" end
+	if not Guard.Allow(player, "PlayCard", 0.12) then return false, "SLOW_DOWN" end
 	if not isId(uid) then return false, "INVALID_CARD" end
 	if target ~= nil and not isId(target) then return false, "INVALID_TARGET" end
-	return guarded(player, "PlayCard", uid, target)
+	local m = ActiveMatches[player]
+	local cardType
+	local side = m and m.sides and m.sides[player]
+	if side then
+		for _, c in side.hand do
+			if c.Uid == uid then cardType = c.Type break end
+		end
+	end
+	local ok, code = guarded(player, "PlayCard", uid, target)
+	if ok then
+		trackQuest(player, "CardPlayed")
+		if cardType == "Spell" then trackQuest(player, "SpellPlayed") end
+		if target == "Gate" then trackQuest(player, "GatePlayed") end
+	end
+	return ok, code
 end
 
 Remotes.Attack.OnServerInvoke = function(player, attackerUid, targetUid)
-	if not allow(player, "Attack") then return false, "SLOW_DOWN" end
+	if not Guard.Allow(player, "Attack", 0.12) then return false, "SLOW_DOWN" end
 	if not isId(attackerUid) or not isId(targetUid) then return false, "INVALID_TARGET" end
-	return guarded(player, "Attack", attackerUid, targetUid)
+	local ok, code = guarded(player, "Attack", attackerUid, targetUid)
+	if ok then trackQuest(player, "Attack") end
+	return ok, code
 end
 
 Remotes.EndTurn.OnServerEvent:Connect(function(player)
-	if allow(player, "EndTurn", 0.3) then guarded(player, "EndTurn", false) end
+	if Guard.Allow(player, "EndTurn", 0.4) then guarded(player, "EndTurn", false) end
 end)
 
 Remotes.Surrender.OnServerEvent:Connect(function(player)
-	if allow(player, "Surrender", 1) then guarded(player, "Surrender") end
+	if Guard.Allow(player, "Surrender", 1) then guarded(player, "Surrender") end
 end)
 
--- 5) เข้า/ออกเกม (จบแมตช์ก่อน แล้วค่อยเซฟข้อมูล)
+Remotes.Gacha.OnServerInvoke = function(player, count)
+	if not Guard.Allow(player, "Gacha", 0.6) then return false, "SLOW_DOWN" end
+	if count ~= 1 and count ~= 10 then return false, "BAD_COUNT" end
+	local data = DataService.GetData(player)
+	if not data then return false, "DATA_LOADING" end
+	local ok, res = Guard.Run(player, "profile", GachaService.Pull, data, count)
+	if ok then
+		QuestService.Track(data, player.UserId, "GachaPull", count)
+		DataService.Touch(player)
+	end
+	return ok, res
+end
+
+Remotes.SaveDeck.OnServerInvoke = function(player, ids)
+	if not Guard.Allow(player, "SaveDeck", 1) then return false, "SLOW_DOWN" end
+	local data = DataService.GetData(player)
+	if not data then return false, "DATA_LOADING" end
+	if typeof(ids) ~= "table" or #ids > 64 then return false, "ข้อมูลเด็คไม่ถูกต้อง" end
+	local clean = {}
+	for i = 1, #ids do clean[i] = ids[i] end
+	local ok, err = DeckRules.Validate(clean, data.Collection)
+	if not ok then return false, err end
+	data.Deck = clean
+	pushProfile(player)
+	return true
+end
+
+Remotes.ClaimQuest.OnServerInvoke = function(player, questId)
+	if not Guard.Allow(player, "ClaimQuest", 0.3) then return false, "SLOW_DOWN" end
+	if not isId(questId) then return false, "BAD_QUEST" end
+	local data = DataService.GetData(player)
+	if not data then return false, "DATA_LOADING" end
+	local ok, res = QuestService.Claim(data, player.UserId, questId)
+	if ok then DataService.Touch(player) end
+	return ok, res
+end
+
+-- 6) เข้า/ออกเกม
 Players.PlayerAdded:Connect(DataService.Load)
 for _, p in Players:GetPlayers() do task.spawn(DataService.Load, p) end
 
@@ -298,7 +380,7 @@ Players.PlayerRemoving:Connect(function(p)
 	local m = ActiveMatches[p]
 	if m and not m.ended then pcall(m.EndMatch, m, m:Opponent(p), "LEFT") end
 	ActiveMatches[p] = nil
-	lastCall[p] = nil
+	pushPending[p] = nil
 	DataService.Release(p)
 end)
 

@@ -4,11 +4,12 @@ Server-authoritative 1v1 card battle with a random "Gate" slot. Version: **Core 
 
 ## Structure
 ```
-ReplicatedStorage/Shared/        Config, Rules, CardData, Decks
-ReplicatedStorage/Shared/UI/     Theme, UIKit, CardView
-ServerStorage/Modules/           GateRNG, CardEffects, BotAI, Match, DataService, StatsService
+ReplicatedStorage/Shared/        Config, Rules, CardData, Decks, DeckRules, QuestData
+ReplicatedStorage/Shared/UI/     Theme, UIKit, CardView, Style (ธีมใหม่)
+ServerStorage/Modules/           GateRNG, CardEffects, BotAI, Match, DataService, StatsService,
+                                 Guard (rate limit), GachaService, QuestService
 ServerScriptService/             GameServer (creates Remotes, matchmaking, rewards), CardValidator
-StarterPlayer/StarterPlayerScripts/UIClient/   init.client + LobbyUI, MatchUI, GateRoller, StatsPanel, SettingsPanel,
+StarterPlayer/StarterPlayerScripts/UIClient/   init.client + LobbyUI, MatchUI, Net, CardFace, Inspect, DragController, StatsPanel, SettingsPanel,
                                                 TurnBanner, CombatFX, TargetArrow, HandFan, MatchBackdrop
 ```
 `Remotes` is created at runtime by `GameServer`; do not declare it in `default.project.json`.

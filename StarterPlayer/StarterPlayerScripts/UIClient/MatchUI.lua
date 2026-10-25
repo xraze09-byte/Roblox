@@ -1,747 +1,452 @@
--- ไฟล์ลูกของ UIClient: MatchUI (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
-local UIFolder = Shared:WaitForChild("UI")
 local Config = require(Shared:WaitForChild("Config"))
 local Rules = require(Shared:WaitForChild("Rules"))
-local CardData = require(Shared:WaitForChild("CardData"))
-local Theme = require(UIFolder:WaitForChild("Theme"))
-local UIKit = require(UIFolder:WaitForChild("UIKit"))
-local CardView = require(UIFolder:WaitForChild("CardView"))
-local GateRoller = require(script.Parent:WaitForChild("GateRoller"))
-local CardInspector = require(UIFolder:WaitForChild("CardInspector"))
-local HandFan = require(script.Parent:WaitForChild("HandFan"))
-local MatchBackdrop = require(script.Parent:WaitForChild("MatchBackdrop"))
-local TurnBanner = require(script.Parent:WaitForChild("TurnBanner"))
-local CombatFX = require(script.Parent:WaitForChild("CombatFX"))
-local TargetArrow = require(script.Parent:WaitForChild("TargetArrow"))
-local SettingsPanel = require(script.Parent:WaitForChild("SettingsPanel"))
+local S = require(Shared:WaitForChild("UI"):WaitForChild("Style"))
+local Net = require(script.Parent:WaitForChild("Net"))
+local CardFace = require(script.Parent:WaitForChild("CardFace"))
+local Drag = require(script.Parent:WaitForChild("DragController"))
+local Inspect = require(script.Parent:WaitForChild("Inspect"))
 
-local RemoteFolder = ReplicatedStorage:WaitForChild("Remotes")
-local R = {}
-for _, name in { "PlayCard", "Attack", "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify" } do
-	R[name] = RemoteFolder:WaitForChild(name)
+local OUTCOME = { Golden = "ทองคำ", Pumped = "พลังพุ่ง", Normal = "ปกติ", Droopy = "ห่อเหี่ยว", Poop = "ซวย" }
+
+local function reasonText(reason, won)
+	if reason == "LEADER_DOWN" then return won and "ผู้นำคู่แข่งล้ม" or "ผู้นำของคุณล้ม" end
+	if reason == "SURRENDER" then return won and "คู่แข่งยอมแพ้" or "คุณยอมแพ้" end
+	if reason == "LEFT" then return "คู่แข่งออกจากเกม" end
+	if reason == "FATIGUE" then return "การ์ดในกองหมด" end
+	if reason == "AFK_LIGHTNING" then return won and "คู่แข่งไม่เล่นหลายเทิร์น" or "คุณไม่ได้เล่นหลายเทิร์น" end
+	return tostring(reason or "")
 end
-
-local CENTER = Vector2.new(0.5, 0.5)
-local ERR = {
-	NOT_YOUR_TURN = "ยังไม่ถึงตาคุณ ใจเย็นๆ",
-	NOT_ENOUGH_POINTS = "พอยต์ไม่พอ! ลองดองไว้ก่อน",
-	FIELD_FULL = "สนามเต็มแล้ว!",
-	GATE_OCCUPIED = "ช่องเกตมีการ์ดอยู่แล้ว!",
-	CANNOT_ATTACK = "ตัวนี้ยังตีไม่ได้ (หลับอยู่ 💤)",
-	TAUNT = "ต้องตีตัวบังก่อน! 🛡️",
-	INVALID_CARD = "ใช้การ์ดใบนี้ไม่ได้",
-	INVALID_TARGET = "เลือกเป้าหมายนี้ไม่ได้",
-	NEED_TARGET = "ต้องเลือกเป้าหมายก่อน",
-	MATCH_OVER = "แมตช์จบไปแล้ว",
-	NO_MATCH = "ไม่ได้อยู่ในแมตช์",
-	SLOW_DOWN = "กดรัวไป ใจเย็นๆ",
-	SERVER_ERROR = "เซิร์ฟเวอร์กาว ลองใหม่อีกที",
-}
-local REASON = {
-	LEADER_DOWN = "ผู้นำล้มคว่ำ 💥",
-	FATIGUE = "การ์ดหมดกองจนหมดแรง 😵",
-	AFK_LIGHTNING = "AFK จนโดนฟ้าผ่า ⚡",
-	LEFT = "อีกฝั่งหนีออกจากเกม 🏃",
-	SURRENDER = "มีคนยอมแพ้ 🏳️",
-}
-local TARGET_RULES = {
-	EnemyChar = { oppField = true },
-	AllyChar = { myField = true },
-	Ally = { myField = true, myLeader = true },
-	Weapon = { myField = true, oppField = true, oppLeader = true },
-}
-local TARGET_HINT = {
-	EnemyChar = "เลือกตัวละครศัตรู 🎯",
-	AllyChar = "เลือกตัวละครฝั่งเรา 💪",
-	Ally = "เลือกตัวละครเราหรือผู้นำเรา 💚",
-	Weapon = "แตะตัวเรา = สวม / แตะศัตรู = ปาใส่ 🗡️",
-}
-local CARD_SIZE = {
-	hand = UDim2.fromScale(0.19, 1),
-	myField = UDim2.fromScale(0.3, 0.95),
-	oppField = UDim2.fromScale(0.3, 0.95),
-	myGate = UDim2.fromScale(0.95, 0.8),
-}
 
 local MatchUI = {}
-local gui, overlay, callbacks
-local ui = {}
-local views = { hand = {}, myField = {}, oppField = {}, myGate = {} }
-local state, selected, endedMatchId
-local busy = false
-local logCounter = 0
 
--- ─────────── ส่วนประกอบหน้าจอ ───────────
-local function zone(name, position, size, opts)
-	opts = opts or {}
-	return UIKit.new("Frame", {
-		Name = name, Position = position, Size = size, AnchorPoint = Vector2.new(0.5, 0),
-		BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = opts.Transparency or 0.82, Parent = gui,
-	}, {
-		UIKit.corner(UDim.new(0.1, 0)),
-		UIKit.new("UIListLayout", {
-			FillDirection = opts.Vertical and Enum.FillDirection.Vertical or Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = opts.Padding or UDim.new(0.02, 0),
-		}),
-	})
-end
+function MatchUI.Build(gui, overlay, cb)
+	cb = cb or {}
+	Inspect.Init(overlay)
 
-local function gateZone(position)
-	local z = zone("Gate", position, UDim2.fromScale(0.11, 0.22), { Vertical = true })
-	local lbl = UIKit.label({ Text = "🎲 ช่องเกต", Size = UDim2.fromScale(1, 0.15), Parent = z })
-	lbl.LayoutOrder = 0
-	return z
-end
+	local ui = {}
+	local state, matchId = nil, nil
+	local ended = false
+	local views = { hand = {}, myField = {}, oppField = {}, myGate = {} }
+	local activeTargets = nil
+	local applyGlows, endTurn, exitMatch
 
-local function pileLabel(position)
-	return UIKit.label({ Font = Theme.FontBody, Size = UDim2.fromScale(0.17, 0.045), Position = position, AnchorPoint = CENTER, Parent = gui })
-end
+	local root = S.new("Frame", { Name = "MatchRoot", BackgroundColor3 = S.C.Felt,
+		Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui }, { S.pad(10) })
 
--- แถบผู้นำ: พอร์ตเทรต (รูป/อีโมจิ) ซ้าย + ชื่อ/โล่/เลือดขวา | ทั้งแถบกดได้
--- ฝั่งศัตรูใช้ขนาดใหญ่กว่า และมีป้าย "แตะเพื่อโจมตี" ที่โผล่เมื่อเลือกผู้โจมตีแล้ว
-local function leaderBar(position, anchor, size)
-	local stroke = UIKit.stroke(nil, 4)
-	local root = UIKit.new("TextButton", {
-		Position = position, AnchorPoint = anchor, Size = size or UDim2.fromScale(0.2, 0.09),
-		BackgroundColor3 = Theme.Color.Panel, Text = "", AutoButtonColor = false, ZIndex = 5, Parent = gui,
-	}, { UIKit.corner(), stroke })
-	local portrait = UIKit.new("ImageLabel", {
-		Name = "Portrait", Size = UDim2.fromScale(0.2, 0.84), Position = UDim2.fromScale(0.03, 0.08),
-		BackgroundColor3 = Color3.fromRGB(255, 240, 200), Image = "", ScaleType = Enum.ScaleType.Crop, ZIndex = 6, Parent = root,
-	}, { UIKit.corner(UDim.new(0.2, 0)), UIKit.new("UIAspectRatioConstraint", { AspectRatio = 1 }), UIKit.stroke(nil, 2) })
-	local face = UIKit.label({
-		Text = "👤", Size = UDim2.fromScale(0.9, 0.9), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER,
-		StrokeThickness = 0, MaxTextSize = 80, Parent = portrait,
-	})
-	local name = UIKit.label({
-		Color = Theme.Color.Outline, StrokeThickness = 0, AlignX = Enum.TextXAlignment.Left,
-		Size = UDim2.fromScale(0.5, 0.4), Position = UDim2.fromScale(0.3, 0.06), ZIndex = 6, Parent = root,
-	})
-	local shield = UIKit.label({
-		Size = UDim2.fromScale(0.2, 0.4), Position = UDim2.fromScale(0.97, 0.06), AnchorPoint = Vector2.new(1, 0), ZIndex = 6, Parent = root,
-	})
-	local track = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.67, 0.38), Position = UDim2.fromScale(0.3, 0.52),
-		BackgroundColor3 = Color3.fromRGB(60, 40, 40), ZIndex = 6, Parent = root,
-	}, { UIKit.corner(UDim.new(0.5, 0)) })
-	local fill = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Green, ZIndex = 7, Parent = track }, { UIKit.corner(UDim.new(0.5, 0)) })
-	local hp = UIKit.label({ ZIndex = 8, Parent = track })
-	-- ป้ายชวนตี (ซ่อนไว้ก่อน)
-	local tag = UIKit.label({
-		Text = "⚔️ แตะเพื่อโจมตี!", Color = Color3.new(1, 1, 1), Size = UDim2.fromScale(0.9, 0.34),
-		Position = UDim2.fromScale(0.5, 1.02), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 9, Visible = false, Parent = root,
-	})
-	return { Root = root, Stroke = stroke, Name = name, Shield = shield, Fill = fill, HP = hp, Portrait = portrait, Face = face, Tag = tag }
-end
-
--- ใส่ภาพ/อีโมจิผู้นำ (CardData[id].Art = "rbxassetid://..." จะมาก่อนอีโมจิ)
-local function setPortrait(bar, leaderId)
-	if bar.LeaderId == leaderId then return end
-	bar.LeaderId = leaderId
-	local data = leaderId and CardData[leaderId]
-	local art = data and data.Art
-	local hasArt = typeof(art) == "string" and art ~= "" and art ~= "rbxassetid://0"
-	bar.Portrait.Image = hasArt and art or ""
-	bar.Face.Text = (data and data.Emoji) or "👤"
-	bar.Face.Visible = not hasArt
-end
-
-local function setLeader(bar, name, hp, shield, leaderId)
-	setPortrait(bar, leaderId)
-	local max = Config.LEADER_HP
-	bar.Name.Text = name or "ผู้นำ"
-	bar.Shield.Text = (shield or 0) > 0 and ("🛡%d"):format(shield) or ""
-	bar.HP.Text = ("❤ %d/%d"):format(math.max(hp, 0), max)
-	bar.Fill.BackgroundColor3 = hp <= 10 and Theme.Color.Red or Theme.Color.Green
-	UIKit.tween(bar.Fill, 0.4, { Size = UDim2.fromScale(math.clamp(hp / max, 0, 1), 1) })
-	if bar.Value and hp < bar.Value then
-		UIKit.shake(bar.Root)
-		UIKit.popup(bar.Root, "-" .. (bar.Value - hp))
-		UIKit.sfx("Hit")
+	local function glowStroke(parent)
+		local s = S.stroke(S.C.Info, 2, parent)
+		s.Name = "Glow"
+		s.Transparency = 1
+		return s
 	end
-	bar.Value = hp
-end
 
-local function pushLog(text, colorName)
-	logCounter += 1
-	local entry = UIKit.new("Frame", {
-		Size = UDim2.fromScale(1, 0.18), BackgroundColor3 = Theme.Color[colorName] or Theme.Color.Panel,
-		LayoutOrder = logCounter, Parent = ui.log,
-	}, { UIKit.corner(), UIKit.stroke(nil, 2) })
-	UIKit.label({
-		Text = text, Font = Theme.FontBody, Color = Theme.Color.Outline, StrokeThickness = 0,
-		Size = UDim2.fromScale(0.94, 0.8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = entry,
+	ui.board = S.new("Frame", { Name = "BoardZone", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 0.75), Parent = root })
+	ui.boardGlow = glowStroke(ui.board)
+
+	local function band(name, y, h)
+		return S.new("Frame", { Name = name, BackgroundTransparency = 1,
+			Position = UDim2.fromScale(0, y), Size = UDim2.fromScale(1, h), Parent = root })
+	end
+	local oppBarF = band("OppBar", 0, 0.08)
+	local oppBoardF = band("OppBoard", 0.09, 0.25)
+	local midF = band("Mid", 0.35, 0.05)
+	local myBoardF = band("MyBoard", 0.41, 0.25)
+	local myBarF = band("MyBar", 0.67, 0.08)
+	local handF = band("Hand", 0.76, 0.24)
+
+	local function leaderBar(parent, width)
+		local bar = S.new("Frame", { BackgroundColor3 = S.C.FeltDark, Size = UDim2.fromScale(width, 1), Parent = parent }, { S.corner(4) })
+		local glow = glowStroke(bar)
+		local name = S.text({ Font = S.Font.Bold, Max = 18, Position = UDim2.fromScale(0.02, 0.1), Size = UDim2.fromScale(0.32, 0.8), Parent = bar })
+		local hpBack = S.new("Frame", { BackgroundColor3 = S.C.Bg, Position = UDim2.fromScale(0.36, 0.22),
+			Size = UDim2.fromScale(0.3, 0.56), Parent = bar }, { S.corner(3) })
+		local hpFill = S.new("Frame", { BackgroundColor3 = S.C.Bad, Size = UDim2.fromScale(1, 1), Parent = hpBack }, { S.corner(3) })
+		local hpText = S.text({ Font = S.Font.Bold, Max = 14, XAlign = "Center", ZIndex = 2, Parent = hpBack })
+		local shield = S.text({ Font = S.Font.Medium, Max = 14, Color = S.C.Info, XAlign = "Center",
+			Position = UDim2.fromScale(0.67, 0.1), Size = UDim2.fromScale(0.1, 0.8), Parent = bar })
+		local info = S.text({ Max = 13, Color = S.C.TextDim, XAlign = "Right",
+			Position = UDim2.fromScale(0.78, 0.1), Size = UDim2.fromScale(0.2, 0.8), Parent = bar })
+		return { Frame = bar, Glow = glow, Name = name, HpFill = hpFill, HpText = hpText, Shield = shield, Info = info }
+	end
+
+	local function addSlot(row)
+		local i = #row.Slots + 1
+		local slot = S.new("Frame", { Name = "Slot" .. i, BackgroundColor3 = S.C.FeltDark, BackgroundTransparency = 0.35,
+			Size = UDim2.fromScale(0.3, 0.96), LayoutOrder = i, Parent = row.Field }, {
+			S.corner(5),
+			S.new("UIAspectRatioConstraint", { AspectRatio = CardFace.ASPECT,
+				AspectType = Enum.AspectType.FitWithinMaxSize, DominantAxis = Enum.DominantAxis.Height }),
+		})
+		S.stroke(S.C.Line, 1, slot)
+		S.text({ Name = "Empty", Text = "ว่าง", Color = S.C.Line, Max = 14, XAlign = "Center", Parent = slot })
+		row.Slots[i] = slot
+	end
+
+	local function boardRow(parent)
+		local row = { Slots = {} }
+		row.Gate = S.new("Frame", { BackgroundColor3 = S.C.FeltDark, Size = UDim2.fromScale(0.13, 1), Parent = parent }, { S.corner(4) })
+		row.GateGlow = glowStroke(row.Gate)
+		S.text({ Text = "เกต", Font = S.Font.Bold, Color = S.C.TextDim, Max = 13, XAlign = "Center",
+			Size = UDim2.fromScale(1, 0.13), Parent = row.Gate })
+		row.GateSlot = S.new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromScale(0.08, 0.15),
+			Size = UDim2.fromScale(0.84, 0.82), Parent = row.Gate })
+		row.Field = S.new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromScale(0.15, 0),
+			Size = UDim2.fromScale(0.7, 1), Parent = parent }, {
+			S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0.025, 0), SortOrder = Enum.SortOrder.LayoutOrder }),
+		})
+		row.FieldGlow = glowStroke(row.Field)
+		row.Info = S.text({ Max = 13, Color = S.C.TextDim, XAlign = "Center",
+			Position = UDim2.fromScale(0.87, 0), Size = UDim2.fromScale(0.13, 1), Parent = parent })
+		for _ = 1, Config.FIELD_SLOTS do addSlot(row) end
+		return row
+	end
+
+	ui.opp = leaderBar(oppBarF, 1)
+	ui.oppRow = boardRow(oppBoardF)
+	ui.oppRow.FaceDown = S.new("Frame", { BackgroundColor3 = S.C.Panel2, Size = UDim2.fromScale(1, 1),
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Visible = false, Parent = ui.oppRow.GateSlot }, {
+		S.corner(5), S.new("UIAspectRatioConstraint", { AspectRatio = CardFace.ASPECT }),
 	})
-	local entries = {}
-	for _, child in ui.log:GetChildren() do
-		if child:IsA("Frame") then table.insert(entries, child) end
+	S.text({ Text = "คว่ำ", Color = S.C.TextDim, Max = 13, XAlign = "Center", Parent = ui.oppRow.FaceDown })
+	ui.myRow = boardRow(myBoardF)
+	ui.me = leaderBar(myBarF, 0.6)
+
+	ui.turn = S.text({ Font = S.Font.Heavy, Max = 20, Size = UDim2.fromScale(0.2, 1), Parent = midF })
+	local timerBack = S.new("Frame", { BackgroundColor3 = S.C.FeltDark, Position = UDim2.fromScale(0.22, 0.3),
+		Size = UDim2.fromScale(0.36, 0.4), Parent = midF }, { S.corner(3) })
+	ui.timerFill = S.new("Frame", { BackgroundColor3 = S.C.Accent, Size = UDim2.fromScale(1, 1), Parent = timerBack }, { S.corner(3) })
+	ui.timerText = S.text({ Font = S.Font.Bold, Max = 16, Position = UDim2.fromScale(0.59, 0), Size = UDim2.fromScale(0.07, 1), Parent = midF })
+	ui.log = S.text({ Color = S.C.TextDim, Max = 14, Position = UDim2.fromScale(0.67, 0), Size = UDim2.fromScale(0.21, 1), Parent = midF })
+	
+	local surrenderArmed = 0
+	ui.surrender = S.button({ Text = "ยอมแพ้", Max = 13, Color = S.C.Panel, Position = UDim2.fromScale(0.89, 0.08),
+		Size = UDim2.fromScale(0.11, 0.84), Parent = midF, OnClick = function(btn)
+			if os.clock() - surrenderArmed < 3 then
+				surrenderArmed = 0
+				btn.Text = "ยอมแพ้"
+				Net.fire("Surrender")
+			else
+				surrenderArmed = os.clock()
+				btn.Text = "ยืนยัน?"
+				task.delay(3, function()
+					if os.clock() - surrenderArmed >= 2.9 then btn.Text = "ยอมแพ้" end
+				end)
+			end
+		end })
+
+	local pts = S.new("Frame", { BackgroundColor3 = S.C.FeltDark, Position = UDim2.fromScale(0.615, 0),
+		Size = UDim2.fromScale(0.165, 1), Parent = myBarF }, { S.corner(4) })
+	S.text({ Text = "แต้ม", Color = S.C.TextDim, Max = 12, XAlign = "Center", Size = UDim2.fromScale(1, 0.38), Parent = pts })
+	ui.points = S.text({ Font = S.Font.Heavy, Color = S.C.Accent, Max = 24, XAlign = "Center",
+		Position = UDim2.fromScale(0, 0.36), Size = UDim2.fromScale(1, 0.6), Parent = pts })
+	ui.endBtn = S.button({ Text = "จบเทิร์น", Max = 20, Color = S.C.Accent, TextColor = S.C.Ink,
+		Position = UDim2.fromScale(0.795, 0), Size = UDim2.fromScale(0.205, 1), Parent = myBarF,
+		Debounce = 0.6, OnClick = function() endTurn() end })
+
+	ui.hand = S.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = handF }, {
+		S.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+
+	local result = S.new("Frame", { Name = "MatchResult", BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.35,
+		Size = UDim2.fromScale(1, 1), Visible = false, Active = true, ZIndex = 30, Parent = overlay })
+	local rbox = S.new("Frame", { BackgroundColor3 = S.C.Panel, AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.34, 0.36), ZIndex = 31, Parent = result }, {
+		S.corner(6), S.new("UISizeConstraint", { MinSize = Vector2.new(280, 200), MaxSize = Vector2.new(460, 300) }),
+	})
+	S.stroke(S.C.Line, 1, rbox)
+	ui.resTitle = S.text({ Font = S.Font.Heavy, Max = 40, XAlign = "Center", Position = UDim2.fromScale(0.05, 0.08),
+		Size = UDim2.fromScale(0.9, 0.28), ZIndex = 32, Parent = rbox })
+	ui.resReason = S.text({ Color = S.C.TextDim, Max = 16, XAlign = "Center", Position = UDim2.fromScale(0.05, 0.38),
+		Size = UDim2.fromScale(0.9, 0.14), ZIndex = 32, Parent = rbox })
+	ui.resReward = S.text({ Font = S.Font.Bold, Color = S.C.Accent, Max = 20, XAlign = "Center",
+		Position = UDim2.fromScale(0.05, 0.53), Size = UDim2.fromScale(0.9, 0.14), ZIndex = 32, Parent = rbox })
+	S.button({ Text = "กลับล็อบบี้", Color = S.C.Accent, TextColor = S.C.Ink, AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0.74), Size = UDim2.fromScale(0.5, 0.17), ZIndex = 32, Parent = rbox,
+		OnClick = function() exitMatch() end })
+
+	local function setZoneGlow(stroke, mode)
+		if not mode then stroke.Transparency = 1 return end
+		stroke.Transparency = 0
+		stroke.Color = mode == "hover" and S.C.Accent or S.C.Info
+		stroke.Thickness = mode == "hover" and 3 or 2
 	end
-	table.sort(entries, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
-	while #entries > 5 do table.remove(entries, 1):Destroy() end
-	task.delay(5, function()
-		if entry.Parent then entry:Destroy() end
-	end)
-end
 
--- ─────────── การโต้ตอบ ───────────
-local function call(remote, ...)
-	if busy then return end
-	busy = true
-	local args = table.pack(...)
-	task.spawn(function()
-		local ok, success, err = pcall(function()
-			return remote:InvokeServer(table.unpack(args, 1, args.n))
-		end)
-		busy = false
-		if not ok then
-			warn("[MatchUI] InvokeServer error: " .. tostring(success))
-			UIKit.toast("เน็ตกาว ลองใหม่อีกที 📶", Theme.Color.Red)
-		elseif not success then
-			-- แสดงรหัสดิบเพื่อหาสาเหตุ (ถ้าไม่มีรหัสแปลว่าเซิร์ฟเวอร์ไม่ได้ตอบมาตามรูปแบบ)
-			warn(("[MatchUI] %s ถูกปฏิเสธ: success=%s err=%s"):format(remote.Name, tostring(success), tostring(err)))
-			UIKit.toast(ERR[err] or ("ทำแบบนี้ไม่ได้ [" .. tostring(err) .. "]"), Theme.Color.Red)
-		end
-	end)
-end
-
-local pulseTween
-local function setLeaderAttackable(on)
-	local bar = ui.oppLeader
-	if not bar then return end
-	bar.Tag.Visible = on
-	bar.Stroke.Color = on and Theme.Color.Red or Theme.Color.Outline
-	bar.Stroke.Thickness = on and 7 or 4
-	if pulseTween then pulseTween:Cancel() pulseTween = nil end
-	if not bar.Scale then bar.Scale = UIKit.new("UIScale", { Parent = bar.Root }) end
-	bar.Scale.Scale = 1
-	if on then
-		pulseTween = TweenService:Create(bar.Scale, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Scale = 1.06 })
-		pulseTween:Play()
-	end
-end
-
-local function clearSelection()
-	if selected and selected.view.Frame.Parent then selected.view:SetSelected(false) end
-	selected = nil
-	for _, map in { views.myField, views.oppField } do
-		for _, v in pairs(map) do v:SetTarget(false) end
-	end
-	ui.myLeader.Stroke.Color = Theme.Color.Outline
-	setLeaderAttackable(false)
-	for _, child in ui.actions:GetChildren() do
-		if child:IsA("GuiObject") then child:Destroy() end
-	end
-	ui.actions.Visible = false
-end
-
-local function actionButton(text, color, width, disabled, onClick)
-	local btn = UIKit.button({ Text = text, Color = color, Size = UDim2.fromScale(width, 1), Parent = ui.actions, OnClick = onClick })
-	btn.LayoutOrder = #ui.actions:GetChildren()
-	if disabled then UIKit.setDisabled(btn, true) end
-end
-
-local function hint(text)
-	local lbl = UIKit.label({ Text = text, Size = UDim2.fromScale(0.5, 1), Parent = ui.actions })
-	lbl.LayoutOrder = 0
-end
-
-local function highlight(rule)
-	local count = 0
-	for zoneName, map in { myField = views.myField, oppField = views.oppField } do
-		for _, v in pairs(map) do
-			local ok = rule[zoneName] == true
-			v:SetTarget(ok)
-			if ok then count += 1 end
+	local function markTargets(hover)
+		for _, t in activeTargets or {} do
+			local mode = t == hover and "hover" or "target"
+			if t.View then t.View:SetGlow(mode) elseif t.Glow then setZoneGlow(t.Glow, mode) end
 		end
 	end
-	ui.myLeader.Stroke.Color = rule.myLeader and Theme.Color.Red or Theme.Color.Outline
-	ui.oppLeader.Stroke.Color = rule.oppLeader and Theme.Color.Red or Theme.Color.Outline
-	if rule.myLeader then count += 1 end
-	if rule.oppLeader then count += 1 end
-	return count
-end
 
-local function playCard(uid, target)
-	UIKit.sfx("PlayCard")
-	clearSelection()
-	call(R.PlayCard, uid, target)
-end
-
-local function doAttack(targetUid)
-	if not selected or selected.mode ~= "attack" then
-		warn("[MatchUI] doAttack ถูกเรียกแต่ไม่ได้อยู่โหมดโจมตี selected=" .. tostring(selected and selected.mode))
-		return
+	local function clearTargets()
+		for _, t in activeTargets or {} do
+			if t.Glow then setZoneGlow(t.Glow, nil) end
+		end
+		activeTargets = nil
+		applyGlows()
 	end
-	if busy then warn("[MatchUI] doAttack ถูกบล็อก: คำสั่งก่อนหน้ายังไม่ตอบกลับ") return end
-	local attacker = selected.view
-	clearSelection()
-	attacker:Lunge()
-	UIKit.sfx("Swing")
-	call(R.Attack, attacker.Card.Uid, targetUid)
-end
 
-local function selectHand(view)
-	clearSelection()
-	local card = view.Card
-	local myTurn = state.isMyTurn
-	local tt = Rules.TargetType(card)
-	selected = { mode = "hand", view = view }
-	view:SetSelected(true)
-
-	if tt == "Board" then
-		local gateCost = Rules.GateCost(card)
-		actionButton(("ลงสนาม ⚡%d"):format(card.Cost), Theme.Color.Yellow, 0.32,
-			not myTurn or #state.myField >= Config.FIELD_SLOTS or card.Cost > state.myPoints,
-			function() playCard(card.Uid, "Field") end)
-		actionButton(("ลงเกต 🎲 ⚡%d"):format(gateCost), Theme.Color.Pink, 0.32,
-			not myTurn or state.myGate ~= nil or gateCost > state.myPoints,
-			function() playCard(card.Uid, "Gate") end)
-	elseif tt == "None" then
-		actionButton(("ใช้การ์ด ⚡%d"):format(card.Cost), Theme.Color.Blue, 0.4,
-			not myTurn or card.Cost > state.myPoints,
-			function() playCard(card.Uid, nil) end)
-	elseif myTurn and card.Cost <= state.myPoints then
-		selected.mode = "target"
-		selected.rule = TARGET_RULES[tt] or {}
-		local count = highlight(selected.rule)
-		hint(count > 0 and (TARGET_HINT[tt] or "เลือกเป้าหมาย") or "ไม่มีเป้าหมายให้เลือก 😅")
-	else
-		actionButton(("ใช้การ์ด ⚡%d"):format(card.Cost), Theme.Color.Blue, 0.4, true, nil)
+	local function addChars(t, list, map)
+		for _, c in list or {} do
+			local v = map[c.Uid]
+			if v then table.insert(t, { Gui = v.Root, View = v, Value = c.Uid }) end
+		end
 	end
-	actionButton("ยกเลิก", Theme.Color.Gray, 0.2, false, clearSelection)
-	ui.actions.Visible = true
-end
 
-local function selectAttacker(view)
-	clearSelection()
-	selected = { mode = "attack", view = view }
-	view:SetSelected(true)
-	local tauntUp = Rules.HasTaunt(state.oppField)
-	for _, v in pairs(views.oppField) do
-		v:SetTarget(not tauntUp or Rules.HasKeyword(v.Card, "Taunt"))
-	end
-	setLeaderAttackable(not tauntUp)
-	-- ปุ่มตีผู้นำใหญ่ ๆ ใช้ได้ทุกขนาดจอ | ถ้ามีตัวบังจะเทาและบอกเหตุผล
-	actionButton(tauntUp and "🛡️ ตีผู้นำไม่ได้ (มีตัวบัง)" or "⚔️ โจมตีผู้นำ",
-		tauntUp and Theme.Color.Gray or Theme.Color.Red, 0.42, tauntUp,
-		function() doAttack("LEADER") end)
-	actionButton("ยกเลิก", Theme.Color.Gray, 0.2, false, clearSelection)
-	ui.actions.Visible = true
-end
-
-local function onCardClick(zoneName, view)
-	if not state or busy then return end
-	if zoneName == "hand" then
-		if selected and selected.view == view then clearSelection() else selectHand(view) end
-		return
-	end
-	if selected and selected.mode == "target" then
-		if selected.rule[zoneName] then
-			playCard(selected.view.Card.Uid, view.Card.Uid)
+	local function playTargets(card)
+		local t = {}
+		if card.Type == "Character" then
+			if #state.myField < Config.FIELD_SLOTS then
+				table.insert(t, { Gui = ui.myRow.Field, Glow = ui.myRow.FieldGlow, Value = "Field" })
+			end
+			if not state.myGate then
+				table.insert(t, { Gui = ui.myRow.Gate, Glow = ui.myRow.GateGlow, Value = "Gate" })
+			end
+		elseif card.Type == "Weapon" then
+			addChars(t, state.myField, views.myField)
+			addChars(t, state.oppField, views.oppField)
+			table.insert(t, { Gui = ui.opp.Frame, Glow = ui.opp.Glow, Value = "LEADER" })
 		else
-			UIKit.toast(ERR.INVALID_TARGET, Theme.Color.Red)
+			local kind = Rules.TargetType(card)
+			if kind == "EnemyChar" then
+				addChars(t, state.oppField, views.oppField)
+			elseif kind == "AllyChar" then
+				addChars(t, state.myField, views.myField)
+			elseif kind == "Ally" then
+				addChars(t, state.myField, views.myField)
+				table.insert(t, { Gui = ui.me.Frame, Glow = ui.me.Glow, Value = "MY_LEADER" })
+			else
+				table.insert(t, { Gui = ui.board, Glow = ui.boardGlow })
+			end
 		end
-		return
+		return t
 	end
-	if selected and selected.mode == "attack" and zoneName == "oppField" then
-		doAttack(view.Card.Uid)
-		return
+
+	local function attackTargets()
+		local t = {}
+		local taunt = Rules.HasTaunt(state.oppField)
+		if taunt then
+			for _, c in state.oppField do
+				if Rules.HasKeyword(c, "Taunt") then
+					local v = views.oppField[c.Uid]
+					if v then table.insert(t, { Gui = v.Root, View = v, Value = c.Uid }) end
+				end
+			end
+		else
+			addChars(t, state.oppField, views.oppField)
+			table.insert(t, { Gui = ui.opp.Frame, Glow = ui.opp.Glow, Value = "LEADER" })
+		end
+		return t
 	end
-	if zoneName == "myField" then
-		if selected and selected.view == view then clearSelection() return end
-		if not state.isMyTurn then UIKit.toast(ERR.NOT_YOUR_TURN) return end
-		if not view.Card.CanAttack or (view.Card.ATK or 0) <= 0 then
-			UIKit.shake(view.Body)
-			UIKit.toast(view.Card.Frozen and "แข็งเป็นน้ำแข็งอยู่ ❄️" or ERR.CANNOT_ATTACK)
+
+	applyGlows = function()
+		if not state or not state.isMyTurn then
+			for _, v in views.hand do v:SetGlow("none") end
+			for _, v in views.myField do v:SetGlow("none") end
 			return
 		end
-		selectAttacker(view)
-	end
-end
-
-local function onLeaderClick(which)
-	if not state or busy or not selected then return end
-	if selected.mode == "target" then
-		if selected.rule[which] then
-			playCard(selected.view.Card.Uid, which == "myLeader" and "MY_LEADER" or "LEADER")
-		else
-			UIKit.toast(ERR.INVALID_TARGET, Theme.Color.Red)
-		end
-	elseif selected.mode == "attack" and which == "oppLeader" then
-		if Rules.HasTaunt(state.oppField) then
-			UIKit.shake(ui.oppLeader.Root)
-			UIKit.toast(ERR.TAUNT or "มีตัวบัง! ต้องตีมันก่อน 🛡️", Theme.Color.Red)
-		else
-			doAttack("LEADER")
-		end
-	end
-end
-
-local function inspect(card)
-	CardInspector.Open(card)
-end
-
--- เปิดดูแล้วกด ◀ ▶ ไล่ดูการ์ดในโซนเดียวกันได้
-local function inspectZone(map, view)
-	local sorted = {}
-	for _, v in pairs(map) do table.insert(sorted, v) end
-	table.sort(sorted, function(a, b) return a.Frame.LayoutOrder < b.Frame.LayoutOrder end)
-	local cards, idx = {}, 1
-	for i, v in ipairs(sorted) do
-		cards[i] = v.Card
-		if v == view then idx = i end
-	end
-	CardInspector.Open(view.Card, cards, idx)
-end
-
-local function endTurn()
-	if not state or not state.isMyTurn or busy then return end
-	clearSelection()
-	UIKit.setDisabled(ui.endBtn, true)
-	R.EndTurn:FireServer()
-	task.delay(2, function() -- กันปุ่มค้าง ถ้าเซิร์ฟเวอร์ไม่ตอบ
-		if state and state.isMyTurn then UIKit.setDisabled(ui.endBtn, false) end
-	end)
-end
-
-local lastPray = 0
-local function pray()
-	if os.clock() - lastPray < 5 then UIKit.toast("พระท่านพักอยู่ รออีกแป๊บ 🙏") return end
-	lastPray = os.clock()
-	UIKit.sfx("Pray")
-	local beam = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.62, 0.62), Position = UDim2.fromScale(0.5, 0), AnchorPoint = Vector2.new(0.5, 0),
-		BackgroundColor3 = Color3.fromRGB(255, 240, 150), BackgroundTransparency = 1, Parent = overlay,
-	}, {
-		UIKit.new("UIGradient", {
-			Rotation = 90,
-			Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0.2) }),
-		}),
-	})
-	UIKit.label({ Text = "🙏 สาธุ~ ขอให้เกตออกทอง", Size = UDim2.fromScale(0.8, 0.12), Position = UDim2.fromScale(0.5, 0.8), AnchorPoint = CENTER, Parent = beam })
-	UIKit.tween(beam, 0.4, { BackgroundTransparency = 0.3 })
-	task.delay(2, function() beam:Destroy() end)
-end
-
--- ─────────── วาดสถานะเกม ───────────
-local function sync(container, cards, map, zoneName)
-	local alive = {}
-	for i, card in ipairs(cards) do
-		alive[card.Uid] = true
-		local view = map[card.Uid]
-		if view then
-			local oldHP, oldATK = view.Card.HP, view.Card.ATK
-			view:Update(card)
-			CardInspector.Refresh(card)
-			if oldHP and card.HP and card.HP < oldHP then view:Hit(oldHP - card.HP) end
-			if oldHP and card.HP and card.HP > oldHP then CombatFX.Number(view.Body, card.HP - oldHP, "Heal") end
-			if oldATK and card.ATK and card.ATK ~= oldATK then CombatFX.Number(view.Body, card.ATK - oldATK, "Atk") end
-		else
-			view = CardView.new(card, {
-				Size = CARD_SIZE[zoneName],
-				ShowSleep = zoneName == "myField" or zoneName == "oppField",
-				OnClick = function(v) onCardClick(zoneName, v) end,
-				NoHover = zoneName == "hand", -- ในมือให้ HandFan จัดการเอง
-			OnInspect = function(v) inspectZone(map, v) end,
-			})
-			view.Frame.Parent = container
-			view:PopIn()
-			map[card.Uid] = view
-		end
-		view.Frame.LayoutOrder = i
-	end
-	for uid, view in pairs(map) do
-		if not alive[uid] then
-			map[uid] = nil
-			if zoneName == "hand" or zoneName == "myGate" then view:Remove() else view:Die() end
-		end
-	end
-end
-
-local function fanHand()
-	HandFan.Layout(ui.hand, views.hand)
-end
-
-local function render(s)
-	local prev = state
-	local first = state == nil
-	local keepUid = selected and selected.mode ~= "attack" and selected.view.Card.Uid
-	state = s
-	if first then
-		gui.Enabled = true
-		if callbacks.OnStart then callbacks.OnStart() end
-		TurnBanner.Show(s.isMyTurn, true)
-	elseif s.isMyTurn ~= ui.lastTurn then
-		TurnBanner.Show(s.isMyTurn)
-	end
-	ui.lastTurn = s.isMyTurn
-	if ui.backdrop then ui.backdrop:SetTurn(s.isMyTurn) end
-
-	clearSelection()
-	sync(ui.oppField, s.oppField, views.oppField, "oppField")
-	sync(ui.myField, s.myField, views.myField, "myField")
-	sync(ui.myGate, s.myGate and { s.myGate } or {}, views.myGate, "myGate")
-	sync(ui.hand, s.myHand, views.hand, "hand")
-	fanHand()
-	if prev and prev.matchId == s.matchId then
-		CombatFX.Track(ui.myLeader.Root, prev.myHP, s.myHP, "HP")
-		CombatFX.Track(ui.oppLeader.Root, prev.oppHP, s.oppHP, "HP")
-		CombatFX.Track(ui.myLeader.Root, prev.myShield, s.myShield, "Shield")
-		CombatFX.Track(ui.oppLeader.Root, prev.oppShield, s.oppShield, "Shield")
-		CombatFX.Track(ui.pointsBubble, prev.myPoints, s.myPoints, "Points")
-	end
-
-	ui.oppGateBack.Visible = s.oppGateFilled == true
-	for _, child in ui.oppHand:GetChildren() do
-		if child:IsA("Frame") then child:Destroy() end
-	end
-	for i = 1, s.oppHandCount or 0 do
-		local back = CardView.back(UDim2.fromScale(0.18, 1))
-		back.LayoutOrder = i
-		back.Parent = ui.oppHand
-	end
-
-	setLeader(ui.myLeader, s.myLeader, s.myHP, s.myShield, s.myLeaderId)
-	setLeader(ui.oppLeader, s.oppLeader, s.oppHP, s.oppShield, s.oppLeaderId)
-	ui.myPile.Text = ("🂠 %d   💀 %d"):format(s.myDeck or 0, s.myGrave or 0)
-	ui.oppPile.Text = ("🂠 %d   💀 %d%s"):format(s.oppDeck or 0, s.oppGrave or 0,
-		(s.oppBank or 0) > 0 and ("   💰ดอง %d"):format(s.oppBank) or "")
-	ui.bombText = (s.bombs and #s.bombs > 0) and ("   💣 " .. table.concat(s.bombs, ", ")) or ""
-
-	local pointsText = "⚡" .. s.myPoints
-	if ui.points.Text ~= pointsText then UIKit.jelly(ui.pointsBubble, 0.3) end
-	ui.points.Text = pointsText
-
-	if s.isMyTurn then
-		ui.endLabel.Text = s.mySpent and "จบเทิร์น ▶" or "ข้าม (ดองพอยต์) 💰"
-		UIKit.setColor(ui.endBtn, s.mySpent and Theme.Color.Yellow or Theme.Color.Pink)
-		UIKit.setDisabled(ui.endBtn, false)
-	else
-		ui.endLabel.Text = "รอศัตรู... ⏳"
-		UIKit.setDisabled(ui.endBtn, true)
-	end
-
-	if keepUid and views.hand[keepUid] then selectHand(views.hand[keepUid]) end
-end
-
-local function reset()
-	for _, map in pairs(views) do
-		for uid, view in pairs(map) do
-			view.Frame:Destroy()
-			map[uid] = nil
-		end
-	end
-	for _, child in ui.log:GetChildren() do
-		if child:IsA("Frame") then child:Destroy() end
-	end
-	state, selected, ui.lastTurn = nil, nil, nil
-	ui.myLeader.Value, ui.oppLeader.Value = nil, nil
-	ui.resultOpen = false
-	gui.Enabled = false
-end
-
-local function showResult(won, reason, gems)
-	if ui.resultOpen then return end
-	ui.resultOpen = true
-	local dim = UIKit.new("Frame", {
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 0.3, Active = true, Parent = overlay,
-	})
-	UIKit.sfx(won and "Win" or "Lose")
-	UIKit.rain(dim, won and "🏆" or "🧂", 30)
-	local title = UIKit.label({
-		Text = won and "ชนะ! 🏆" or "แพ้... เกลือเต็มปาก 🧂", Color = won and Theme.Color.Yellow or Theme.Color.Gray,
-		Size = UDim2.fromScale(0.8, 0.2), Position = UDim2.fromScale(0.5, 0.28), AnchorPoint = CENTER,
-		Parent = dim, MaxTextSize = 120, StrokeThickness = 5,
-	})
-	UIKit.jelly(title, 0.5)
-	UIKit.label({ Text = REASON[reason] or tostring(reason or ""), Size = UDim2.fromScale(0.6, 0.07), Position = UDim2.fromScale(0.5, 0.44), AnchorPoint = CENTER, Parent = dim })
-	UIKit.label({ Text = ("+%d 💎"):format(gems or 0), Color = Theme.Color.Blue, Size = UDim2.fromScale(0.4, 0.08), Position = UDim2.fromScale(0.5, 0.53), AnchorPoint = CENTER, Parent = dim })
-	UIKit.button({
-		Text = "กลับล็อบบี้", Color = Theme.Color.Green, Size = UDim2.fromScale(0.25, 0.1),
-		Position = UDim2.fromScale(0.5, 0.68), AnchorPoint = CENTER, Parent = dim,
-		OnClick = function()
-			dim:Destroy()
-			reset()
-			if callbacks.OnExit then callbacks.OnExit() end
-		end,
-	})
-end
-
-local function updateTimer()
-	if not state or not state.turnEndsAt or not gui.Enabled then return end
-	local left = math.max(0, math.ceil(state.turnEndsAt - workspace:GetServerTimeNow()))
-	ui.timerFill.Size = UDim2.fromScale(left / Config.TURN_TIME, 1)
-	ui.timerFill.BackgroundColor3 = left <= 20 and Theme.Color.Red or Theme.Color.Yellow
-	ui.timerText.Text = ("%s %d:%02d%s"):format(state.isMyTurn and "ตาคุณ" or "ตาศัตรู", left // 60, left % 60, ui.bombText or "")
-end
-
-local NUM_KEYS = {
-	[Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3,
-	[Enum.KeyCode.Four] = 4, [Enum.KeyCode.Five] = 5,
-}
-local function onKey(input, processed)
-	if processed or not state or not gui.Enabled then return end
-	if input.KeyCode == Enum.KeyCode.Return then
-		endTurn()
-	elseif input.KeyCode == Enum.KeyCode.X then
-		clearSelection()
-	elseif NUM_KEYS[input.KeyCode] then
-		local card = state.myHand[NUM_KEYS[input.KeyCode]]
-		local view = card and views.hand[card.Uid]
-		if view then selectHand(view) end
-	end
-end
-
--- ─────────── สร้างหน้าจอ ───────────
-function MatchUI.Build(matchGui, overlayGui, cb)
-	gui, overlay, callbacks = matchGui, overlayGui, cb or {}
-	gui.Enabled = false
-
-	UIKit.new("Frame", {
-		Name = "TableBg", Size = UDim2.new(1, 0, 1, 200), Position = UDim2.fromOffset(0, -100),
-		BackgroundColor3 = Theme.Color.Table, Active = true, ZIndex = 0, Parent = gui,
-	}, {
-		UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 150, 150)) }),
-	})
-	ui.backdrop = MatchBackdrop.new(gui)
-
-	-- ฝั่งศัตรู
-	ui.oppLeader = leaderBar(UDim2.fromScale(0.5, 0.012), Vector2.new(0.5, 0), UDim2.fromScale(0.3, 0.105))
-	ui.oppLeader.Root.Activated:Connect(function() onLeaderClick("oppLeader") end)
-	ui.oppHand = zone("OppHand", UDim2.fromScale(0.78, -0.035), UDim2.fromScale(0.26, 0.1), { Transparency = 1 }) -- ขวาของพอร์ตเทรตศัตรู
-	ui.oppField = zone("OppField", UDim2.fromScale(0.5, 0.13), UDim2.fromScale(0.62, 0.22))
-	ui.oppGate = gateZone(UDim2.fromScale(0.11, 0.13))
-	ui.oppGateBack = CardView.back(UDim2.fromScale(0.95, 0.8))
-	ui.oppGateBack.LayoutOrder = 1
-	ui.oppGateBack.Visible = false
-	ui.oppGateBack.Parent = ui.oppGate
-	ui.oppPile = pileLabel(UDim2.fromScale(0.9, 0.17))
-
-	TurnBanner.Init(gui)
-
-	-- ปุ่ม ⚙️ มุมขวาบน: ตั้งค่า + ยอมแพ้
-	local settingsPanel
-	local gear = UIKit.button({
-		Text = "⚙️", Color = Theme.Color.Gray, Size = UDim2.fromScale(0.05, 0.08),
-		Position = UDim2.fromScale(0.99, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = gui,
-		OnClick = function()
-			if not settingsPanel then
-				settingsPanel = UIKit.panel(overlay, "ตั้งค่า", Theme.Color.Gray)
-				SettingsPanel.Build(settingsPanel.Content, {
-					OnSurrender = function()
-						if settingsPanel.Close then settingsPanel.Close() end
-						R.Surrender:FireServer() -- ยืนยัน 2 ชั้นอยู่ใน SettingsPanel แล้ว จึงไม่ผ่าน surrender() ที่ต้องกดซ้ำอีก
-					end,
-				})
+		local pts = state.myPoints or 0
+		for _, c in state.myHand do
+			local v = views.hand[c.Uid]
+			if v then
+				local afford = (c.Cost or 0) <= pts
+				v:SetGlow(afford and "playable" or "none")
+				v:SetCostWarning(not afford)
 			end
-			settingsPanel.Open()
-		end,
-	})
-	UIKit.new("UIAspectRatioConstraint", { Parent = gear })
-
-	-- ลูกศรเล็ง: ทำงานตามตัวแปร selected เดิม
-	RunService.RenderStepped:Connect(function()
-		local v = gui.Enabled and selected and (selected.mode == "attack" or selected.mode == "target") and selected.view
-		TargetArrow.Follow(v and v.Body or nil, selected and selected.mode == "target" and Theme.Color.Yellow or Theme.Color.Red)
-	end)
-
-	-- ประวัติเหตุการณ์
-	ui.log = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.17, 0.27), Position = UDim2.fromScale(0.01, 0.2),
-		BackgroundTransparency = 1, Parent = gui,
-	}, {
-		UIKit.new("UIListLayout", {
-			VerticalAlignment = Enum.VerticalAlignment.Bottom, SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0.02, 0),
-		}),
-	})
-
-	-- ตัวจับเวลา
-	local track = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.62, 0.025), Position = UDim2.fromScale(0.5, 0.365), AnchorPoint = Vector2.new(0.5, 0),
-		BackgroundColor3 = Color3.fromRGB(30, 60, 40), Parent = gui,
-	}, { UIKit.corner(UDim.new(0.5, 0)) })
-	ui.timerFill = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Yellow, Parent = track }, { UIKit.corner(UDim.new(0.5, 0)) })
-	ui.timerText = UIKit.label({ Size = UDim2.fromScale(0.5, 1.6), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = track })
-
-	-- ฝั่งเรา
-	ui.myField = zone("MyField", UDim2.fromScale(0.5, 0.40), UDim2.fromScale(0.62, 0.22))
-	ui.myGate = gateZone(UDim2.fromScale(0.11, 0.40))
-	ui.myPile = pileLabel(UDim2.fromScale(0.9, 0.53))
-	ui.actions = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.56, 0.06), Position = UDim2.fromScale(0.5, 0.635), AnchorPoint = Vector2.new(0.5, 0),
-		BackgroundTransparency = 1, Visible = false, Parent = gui,
-	}, {
-		UIKit.new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0.02, 0),
-		}),
-	})
-	ui.hand = HandFan.Container(gui, UDim2.fromScale(0.5, 0.70), UDim2.fromScale(0.58, 0.3))
-	ui.myLeader = leaderBar(UDim2.fromScale(0.02, 0.97), Vector2.new(0, 1))
-	ui.myLeader.Root.Activated:Connect(function() onLeaderClick("myLeader") end)
-
-	UIKit.button({
-		Text = "🙏 สวดมนต์", Color = Theme.Color.Panel, Size = UDim2.fromScale(0.13, 0.08),
-		Position = UDim2.fromScale(0.02, 0.86), AnchorPoint = Vector2.new(0, 1), Parent = gui, OnClick = pray,
-	})
-
-	ui.pointsBubble = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.11, 0.11), Position = UDim2.fromScale(0.87, 0.85), AnchorPoint = CENTER,
-		BackgroundColor3 = Theme.Color.Yellow, Parent = gui,
-	}, { UIKit.new("UIAspectRatioConstraint", {}), UIKit.corner(UDim.new(0.5, 0)), UIKit.stroke(nil, 4) })
-	ui.points = UIKit.label({ Text = "⚡0", Size = UDim2.fromScale(0.8, 0.6), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = ui.pointsBubble })
-	UIKit.label({
-		Text = ("พอยต์ (ดองได้ถึง %d)"):format(Config.MAX_BANKED_POINTS), Font = Theme.FontBody,
-		Size = UDim2.fromScale(0.17, 0.03), Position = UDim2.fromScale(0.87, 0.92), AnchorPoint = Vector2.new(0.5, 0), Parent = gui,
-	})
-	ui.endBtn, ui.endLabel = UIKit.button({
-		Text = "จบเทิร์น", Size = UDim2.fromScale(0.15, 0.09), Position = UDim2.fromScale(0.985, 0.375),
-		AnchorPoint = Vector2.new(1, 0.5), Parent = gui, OnClick = endTurn,
-	})
-
-	-- คลิกขวา/กดค้างที่แถบผู้นำ = ดูการ์ดผู้นำ (state.myLeader = "ชื่อผู้เล่น • ชื่อผู้นำ")
-	local function leaderKey(full)
-		if not full then return nil end
-		return (tostring(full):match("•%s*(.+)$")) or full
+		end
+		for _, c in state.myField do
+			local v = views.myField[c.Uid]
+			if v then
+				v:SetGlow(c.CanAttack and "ready" or "none")
+			end
+		end
 	end
-	local function leaderPeek(bar, getText)
-		bar.Root.MouseButton2Click:Connect(function() CardInspector.OpenByName(leaderKey(getText())) end)
-		bar.Root.TouchLongPress:Connect(function(_, st)
-			if st == Enum.UserInputState.Begin then CardInspector.OpenByName(leaderKey(getText())) end
+
+	function endTurn()
+		if not state or not state.isMyTurn or ended then return end
+		Net.fire("EndTurn")
+	end
+
+	exitMatch = function()
+		result.Visible = false
+		root.Visible = false
+		ended = false
+		state = nil
+		matchId = nil -- ไม่งั้นแมตช์ถัดไปจะถูกเมินเพราะ matchId ไม่ตรง
+		if cb.OnExit then cb.OnExit() end
+	end
+
+	-- ผูกปุ่มการ์ดในมือ (รองรับทั้งแตะเพื่อดู และลากเพื่อเล่น)
+	local function bindHand(faceCard, card)
+		faceCard.Root.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+			if not state or not state.isMyTurn or ended then
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then Inspect.Show(card) end
+				return
+			end
+			Drag.Begin(input, {
+				Source = card.Uid,
+				CanStart = function() return (card.Cost or 0) <= (state.myPoints or 0) end,
+				Ghost = function()
+					local g = CardFace.new(card, { Size = UDim2.fromOffset(88, 122) })
+					g.Root.ZIndex = 50
+					return g.Root
+				end,
+				Targets = function()
+					activeTargets = playTargets(card)
+					markTargets(nil)
+					return activeTargets
+				end,
+				OnHover = markTargets,
+				OnEnd = clearTargets,
+				OnDrop = function(target)
+					if not target then return end
+					local val = target.Value
+					local ok, err = Net.invoke("PlayCard", card.Uid, val) -- val: Field/Gate/LEADER/MY_LEADER/Uid หรือ nil (เวทไม่ต้องเลือกเป้า)
+					if not ok then S.toast(Net.message(err), "bad") end
+				end,
+				OnTap = function() Inspect.Show(card) end,
+			})
 		end)
 	end
-	leaderPeek(ui.myLeader, function() return state and state.myLeader end)
-	leaderPeek(ui.oppLeader, function() return state and state.oppLeader end)
 
-	-- รับข้อมูลจากเซิร์ฟเวอร์
-	R.StateUpdate.OnClientEvent:Connect(function(s)
-		if typeof(s) ~= "table" or (s.matchId and s.matchId == endedMatchId) then return end
+	-- ผูกปุ่มตัวละครในสนาม (ลากเพื่อโจมตี)
+	local function bindField(faceCard, card)
+		faceCard.Root.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+			if not state or not state.isMyTurn or ended or not card.CanAttack then
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then Inspect.Show(card) end
+				return
+			end
+			Drag.Begin(input, {
+				Source = card.Uid,
+				Arrow = true,
+				CanStart = function() return card.CanAttack == true end,
+				Targets = function()
+					activeTargets = attackTargets()
+					markTargets(nil)
+					return activeTargets
+				end,
+				OnHover = markTargets,
+				OnEnd = clearTargets,
+				OnDrop = function(target)
+					if not target then return end
+					local ok, err = Net.invoke("Attack", card.Uid, target.Value)
+					if not ok then S.toast(Net.message(err), "bad") end
+				end,
+				OnTap = function() Inspect.Show(card) end,
+			})
+		end)
+	end
+
+	local function syncZone(container, list, viewMap, isHand)
+		local alive = {}
+		for _, c in list or {} do
+			local uid = c.Uid
+			alive[uid] = true
+			local v = viewMap[uid]
+			if not v then
+				v = CardFace.new(c, {})
+				v.Root.Parent = container
+				if isHand then bindHand(v, c) else bindField(v, c) end
+				v:PopIn()
+				viewMap[uid] = v
+			else
+				v:Update(c)
+			end
+		end
+		for uid, v in viewMap do
+			if not alive[uid] then
+				v:Destroy()
+				viewMap[uid] = nil
+			end
+		end
+	end
+
+	local function render(s)
+		state = s
+		local isNewMatch = matchId == nil
+		matchId = s.matchId
+		root.Visible = true
+		-- เรียกทุกครั้งที่เริ่มแมตช์ใหม่ (เดิมตั้ง cb.OnStart = nil ทำให้แมตช์ที่ 2 ไม่ซ่อนล็อบบี้)
+		if isNewMatch and cb.OnStart then cb.OnStart() end
+
+		ui.turn.Text = if s.isMyTurn then "เทิร์นของคุณ" else "ตาคู่แข่ง"
+		ui.turn.TextColor3 = s.isMyTurn and S.C.Accent or S.C.TextDim
+		ui.points.Text = tostring(s.myPoints or 0)
+		ui.endBtn:SetAttribute("Disabled", not s.isMyTurn)
+
+		ui.me.Name.Text = s.myLeader
+		ui.me.HpText.Text = tostring(s.myHP)
+		ui.me.HpFill.Size = UDim2.fromScale(math.clamp(s.myHP / Config.LEADER_HP, 0, 1), 1)
+		ui.me.Shield.Text = (s.myShield and s.myShield > 0) and ("โล่ " .. s.myShield) or ""
+		ui.me.Info.Text = ("กอง %d | สุสาน %d"):format(s.myDeck, s.myGrave)
+
+		ui.opp.Name.Text = s.oppLeader
+		ui.opp.HpText.Text = tostring(s.oppHP)
+		ui.opp.HpFill.Size = UDim2.fromScale(math.clamp(s.oppHP / Config.LEADER_HP, 0, 1), 1)
+		ui.opp.Shield.Text = (s.oppShield and s.oppShield > 0) and ("โล่ " .. s.oppShield) or ""
+		ui.opp.Info.Text = ("มือ %d | กอง %d"):format(s.oppHandCount, s.oppDeck)
+
+		syncZone(ui.hand, s.myHand, views.hand, true)
+		syncZone(ui.myRow.Field, s.myField, views.myField, false)
+		syncZone(ui.oppRow.Field, s.oppField, views.oppField, false)
+
+		-- ช่องเกต
+		ui.myRow.GateSlot:ClearAllChildren()
+		views.myGate = nil
+		if s.myGate then
+			local v = CardFace.new(s.myGate, {})
+			v.Root.Parent = ui.myRow.GateSlot
+			views.myGate = v
+		end
+		ui.oppRow.FaceDown.Visible = s.oppGateFilled
+
+		applyGlows()
+	end
+
+	Net.on("StateUpdate", function(s)
+		if ended then return end -- StateUpdate ที่ถูก defer อาจมาหลัง MatchEnded: ห้ามวาดทับหน้าผลลัพธ์
+		if typeof(s) ~= "table" then return end
+		-- แมตช์ใหม่: matchId ยังเป็น nil (หลัง exitMatch) ให้รับ id แรกที่เข้ามา
+		if matchId ~= nil and s.matchId ~= matchId then return end
 		render(s)
 	end)
-	R.GateRolled.OnClientEvent:Connect(function(isMine, card, outcomeId)
-		if state then GateRoller.Play(overlay, card, outcomeId, isMine) end
+
+	Net.on("GateRolled", function(mine, card, outcome)
+		local name = S.clean(card.Name)
+		local outName = OUTCOME[outcome] or outcome
+		S.toast(("เกต: %s ออกผล [%s]"):format(name, outName), mine and "good" or "info")
 	end)
-	R.Notify.OnClientEvent:Connect(function(text, color)
-		if state then pushLog(tostring(text), color) end
+
+	Net.on("MatchEnded", function(won, reason, id, reward)
+		if id ~= matchId and matchId ~= nil then return end
+		ended = true
+		ui.resTitle.Text = won and "ชนะแล้ว!" or "แพ้แล้ว!"
+		ui.resTitle.TextColor3 = won and S.C.Good or S.C.Bad
+		ui.resReason.Text = reasonText(reason, won)
+		ui.resReward.Text = reward and reward > 0 and ("ได้รับ +" .. reward .. " เพชร") or ""
+		result.Visible = true
 	end)
-	R.MatchEnded.OnClientEvent:Connect(function(won, reason, matchId, gems)
-		endedMatchId = matchId
-		if state then clearSelection() end
-		showResult(won, reason, gems)
+
+	Net.on("Notify", function(text, color)
+		S.toast(text, color == "Red" and "bad" or (color == "Green" and "good" or "info"))
 	end)
-	RunService.Heartbeat:Connect(updateTimer)
-	UserInputService.InputBegan:Connect(onKey)
+
+	RunService.RenderStepped:Connect(function(dt)
+		if not state or ended then return end
+		local rem = math.max(0, (state.turnEndsAt or 0) - workspace:GetServerTimeNow())
+		ui.timerText.Text = math.ceil(rem)
+		ui.timerFill.Size = UDim2.fromScale(math.clamp(rem / Config.TURN_TIME, 0, 1), 1)
+	end)
 end
 
 return MatchUI
