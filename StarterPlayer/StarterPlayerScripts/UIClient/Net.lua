@@ -44,6 +44,7 @@ Net.Errors = {
 	IN_MATCH = "อยู่ในแมตช์แล้ว", BAD_LEADER = "เลือกผู้นำไม่ถูกต้อง", BAD_MODE = "โหมดไม่ถูกต้อง",
 	NOT_DONE = "เควสต์ยังไม่สำเร็จ", ALREADY_CLAIMED = "รับรางวัลไปแล้ว", BAD_QUEST = "ไม่พบเควสต์",
 	BAD_COUNT = "จำนวนครั้งไม่ถูกต้อง", EMPTY_POOL = "ตู้สุ่มยังไม่มีการ์ด",
+	BAD_FARM = "ไม่พบฟาร์มนี้", NOTHING_TO_CLAIM = "ยังไม่มีของให้เก็บ", MAX_LEVEL = "เลเวลสูงสุดแล้ว",
 }
 
 function Net.message(code)

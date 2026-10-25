@@ -23,6 +23,33 @@ local FarmUI = tryRequire("FarmUI")
 local TowerUI = tryRequire("TowerUI")
 local DeckBuilder = tryRequire("DeckBuilder")
 
+-- ฟาร์มจริง: เซิร์ฟเวอร์ส่งเวลาเป็น unix (os.time) ส่วน FarmUI ใช้ workspace:GetServerTimeNow() จึงต้องแปลงฐานเวลา
+local function openFarm(overlay, wallet, onGems)
+	local ok, farms, serverUnix = Net.invoke("GetFarms")
+	if not ok then S.toast(Net.message(farms), "bad") return end
+	local offset = workspace:GetServerTimeNow() - serverUnix
+	local list = {}
+	for i, f in farms do
+		local c = table.clone(f)
+		c.LastClaim = f.LastClaim + offset
+		c.Color = ({ S.C.Good, S.C.Info, S.C.Pink })[(i - 1) % 3 + 1]
+		list[i] = c
+	end
+	FarmUI.Open(overlay, { Farms = list, Wallet = wallet or 0, WalletEmoji = "💎",
+		OnClaim = function(id)
+			local okC, amount = Net.invoke("ClaimFarm", id)
+			if okC and onGems then onGems() end
+			return okC, okC and amount or Net.message(amount)
+		end,
+		OnUpgrade = function(id)
+			local okU, nf = Net.invoke("UpgradeFarm", id)
+			if not okU then return false, Net.message(nf) end
+			nf.LastClaim = nf.LastClaim + offset
+			if onGems then onGems() end
+			return true, nf
+		end })
+end
+
 local LobbyUI = {}
 
 local TAB_COLOR = { Battle = S.C.Bad, Deck = S.C.Info, Gacha = S.C.Pink, Quests = S.C.Good, Stats = S.C.Violet, Fun = S.C.Teal }
@@ -342,13 +369,13 @@ function LobbyUI.Build(hud, overlay)
 			{ Text = "หอคอย", Color = S.C.Violet, Mod = TowerUI },
 			{ Text = "ประกาศจับ (Bounty)", Color = S.C.Accent, Mod = BountyBoard },
 			{ Text = "ทัวร์นาเมนต์", Color = S.C.Info, Mod = TournamentBracket },
-			{ Text = "ฟาร์ม", Color = S.C.Good, Mod = FarmUI },
+			{ Text = "ฟาร์ม", Color = S.C.Good, Mod = FarmUI, Open = function() openFarm(overlay, profile and profile.Gems, LobbyUI.Refresh) end },
 		}
 		for i, e in entries do
 			S.button({ Text = e.Text, Max = 18, Color = e.Color, LayoutOrder = i, Size = UDim2.new(1, -8, 0, 48), Parent = list,
 				OnClick = function()
 					if not e.Mod then S.toast("หน้านี้ยังโหลดไม่ได้", "bad") return end
-					local ok, err = pcall(e.Mod.Open, overlay)
+					local ok, err = pcall(e.Open or function() return e.Mod.Open(overlay) end)
 					if not ok then warn("[LobbyUI] เปิด " .. e.Text .. " ไม่ได้: " .. tostring(err)); S.toast("เปิดหน้านี้ไม่ได้", "bad") end
 				end })
 		end

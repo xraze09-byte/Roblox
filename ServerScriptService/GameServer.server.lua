@@ -20,7 +20,7 @@ end
 
 -- 1) Remotes
 local REMOTES = {
-	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats", "GetProfile", "SaveDeck", "Gacha", "ClaimQuest" },
+	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats", "GetProfile", "SaveDeck", "Gacha", "ClaimQuest", "GetFarms", "ClaimFarm", "UpgradeFarm" },
 	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify", "ProfileChanged" },
 }
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -61,6 +61,7 @@ local Stats = require(Modules.StatsService)
 local Guard = require(Modules.Guard)
 local GachaService = require(Modules.GachaService)
 local QuestService = require(Modules.QuestService)
+local FarmService = require(Modules.FarmService)
 
 -- 2.1) รวม Broadcast ให้เหลือครั้งเดียวต่อรอบ (ตัวการหลักที่ทำให้แลกตอนกดรัว)
 do
@@ -344,6 +345,32 @@ Remotes.Gacha.OnServerInvoke = function(player, count)
 		QuestService.Track(data, player.UserId, "GachaPull", count)
 		DataService.Touch(player)
 	end
+	return ok, res
+end
+
+-- ===== ฟาร์ม =====
+Remotes.GetFarms.OnServerInvoke = function(player)
+	if not Guard.Allow(player, "GetFarms", 0.5) then return false, "SLOW_DOWN" end
+	local data = DataService.GetData(player)
+	if not data then return false, "DATA_LOADING" end
+	return true, FarmService.List(data)
+end
+
+Remotes.ClaimFarm.OnServerInvoke = function(player, id)
+	if not Guard.Allow(player, "ClaimFarm", 0.5) then return false, "SLOW_DOWN" end
+	local data = DataService.GetData(player)
+	if not data then return false, "DATA_LOADING" end
+	local ok, res = FarmService.Claim(data, id)
+	if ok then DataService.Touch(player) end
+	return ok, res
+end
+
+Remotes.UpgradeFarm.OnServerInvoke = function(player, id)
+	if not Guard.Allow(player, "UpgradeFarm", 0.5) then return false, "SLOW_DOWN" end
+	local data = DataService.GetData(player)
+	if not data then return false, "DATA_LOADING" end
+	local ok, res = FarmService.Upgrade(data, id)
+	if ok then DataService.Touch(player) end
 	return ok, res
 end
 

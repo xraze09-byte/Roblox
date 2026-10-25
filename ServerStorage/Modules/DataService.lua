@@ -11,7 +11,7 @@ local DeckRules = require(Shared:WaitForChild("DeckRules"))
 local DEFAULT = {
 	Gems = 100, Wins = 0, Losses = 0, Streak = 0, BestStreak = 0,
 	Collection = {}, Deck = {}, Pity = { Epic = 0, Legend = 0 },
-	Quests = { Day = 0, List = {} },
+	Quests = { Day = 0, List = {} }, Farms = {},
 }
 local AUTOSAVE_INTERVAL = 120
 
@@ -41,6 +41,7 @@ local function reconcile(data)
 	data.Pity.Epic = tonumber(data.Pity.Epic) or 0
 	data.Pity.Legend = tonumber(data.Pity.Legend) or 0
 	if typeof(data.Quests) ~= "table" then data.Quests = { Day = 0, List = {} } end
+	if typeof(data.Farms) ~= "table" then data.Farms = {} end
 	if next(data.Collection) == nil then
 		for _, id in Decks.Starter do data.Collection[id] = (data.Collection[id] or 0) + 1 end
 	end
