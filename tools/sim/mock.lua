@@ -64,9 +64,15 @@ local function newInstance(class)
 	function inst:Clone() local n = newInstance(class); for k, v in pairs(self._props) do n[k] = v end; return n end
 	function inst:IsDescendantOf(a) local p = self._parent while p do if p == a then return true end p = p._parent end return false end
 	function inst:GetFullName() return self.Name end
+	function inst:GetPropertyChangedSignal(prop)
+		local key = "_pcs_" .. tostring(prop)
+		local sig = rawget(self, key)
+		if not sig then sig = Signal(); rawset(self, key, sig) end
+		return sig
+	end
 	function inst:TweenSize() end function inst:TweenPosition() end
 	function inst:Play() end function inst:Stop() end function inst:Pause() end
-	inst.AbsoluteSize = {X=800,Y=600}; inst.AbsolutePosition = {X=0,Y=0}; inst.AbsoluteContentSize = {X=0,Y=0}
+	inst._props.AbsoluteSize = {X=800,Y=600}; inst._props.AbsolutePosition = {X=0,Y=0}; inst._props.AbsoluteContentSize = {X=0,Y=0}
 	mt.__index = function(t, k)
 		local v = rawget(t, "_props")[k]
 		if v ~= nil then return v end
@@ -80,6 +86,11 @@ local function newInstance(class)
 	mt.__newindex = function(t, k, v)
 		if k == "Parent" then setParent(t, v) return end
 		if k == "Name" then rawset(t, "Name", v) return end
+		if k == "AbsoluteSize" then
+			t._props.AbsoluteSize = v
+			local sig = rawget(t, "_pcs_AbsoluteSize"); if sig then sig:Fire() end
+			return
+		end
 		t._props[k] = v
 	end
 	return setmetatable(inst, mt)
