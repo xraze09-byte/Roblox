@@ -2,11 +2,13 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIFolder = Shared:WaitForChild("UI")
 local Config = require(Shared:WaitForChild("Config"))
 local Rules = require(Shared:WaitForChild("Rules"))
+local CardData = require(Shared:WaitForChild("CardData"))
 local Theme = require(UIFolder:WaitForChild("Theme"))
 local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local CardView = require(UIFolder:WaitForChild("CardView"))
@@ -104,29 +106,57 @@ local function pileLabel(position)
 	return UIKit.label({ Font = Theme.FontBody, Size = UDim2.fromScale(0.17, 0.045), Position = position, AnchorPoint = CENTER, Parent = gui })
 end
 
-local function leaderBar(position, anchor)
+-- แถบผู้นำ: พอร์ตเทรต (รูป/อีโมจิ) ซ้าย + ชื่อ/โล่/เลือดขวา | ทั้งแถบกดได้
+-- ฝั่งศัตรูใช้ขนาดใหญ่กว่า และมีป้าย "แตะเพื่อโจมตี" ที่โผล่เมื่อเลือกผู้โจมตีแล้ว
+local function leaderBar(position, anchor, size)
 	local stroke = UIKit.stroke(nil, 4)
 	local root = UIKit.new("TextButton", {
-		Position = position, AnchorPoint = anchor, Size = UDim2.fromScale(0.2, 0.09),
-		BackgroundColor3 = Theme.Color.Panel, Text = "", AutoButtonColor = false, Parent = gui,
+		Position = position, AnchorPoint = anchor, Size = size or UDim2.fromScale(0.2, 0.09),
+		BackgroundColor3 = Theme.Color.Panel, Text = "", AutoButtonColor = false, ZIndex = 5, Parent = gui,
 	}, { UIKit.corner(), stroke })
+	local portrait = UIKit.new("ImageLabel", {
+		Name = "Portrait", Size = UDim2.fromScale(0.2, 0.84), Position = UDim2.fromScale(0.03, 0.08),
+		BackgroundColor3 = Color3.fromRGB(255, 240, 200), Image = "", ScaleType = Enum.ScaleType.Crop, ZIndex = 6, Parent = root,
+	}, { UIKit.corner(UDim.new(0.2, 0)), UIKit.new("UIAspectRatioConstraint", { AspectRatio = 1 }), UIKit.stroke(nil, 2) })
+	local face = UIKit.label({
+		Text = "👤", Size = UDim2.fromScale(0.9, 0.9), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER,
+		StrokeThickness = 0, MaxTextSize = 80, Parent = portrait,
+	})
 	local name = UIKit.label({
 		Color = Theme.Color.Outline, StrokeThickness = 0, AlignX = Enum.TextXAlignment.Left,
-		Size = UDim2.fromScale(0.68, 0.4), Position = UDim2.fromScale(0.05, 0.06), Parent = root,
+		Size = UDim2.fromScale(0.5, 0.4), Position = UDim2.fromScale(0.3, 0.06), ZIndex = 6, Parent = root,
 	})
 	local shield = UIKit.label({
-		Size = UDim2.fromScale(0.25, 0.4), Position = UDim2.fromScale(0.95, 0.06), AnchorPoint = Vector2.new(1, 0), Parent = root,
+		Size = UDim2.fromScale(0.2, 0.4), Position = UDim2.fromScale(0.97, 0.06), AnchorPoint = Vector2.new(1, 0), ZIndex = 6, Parent = root,
 	})
 	local track = UIKit.new("Frame", {
-		Size = UDim2.fromScale(0.9, 0.38), Position = UDim2.fromScale(0.05, 0.52),
-		BackgroundColor3 = Color3.fromRGB(60, 40, 40), Parent = root,
+		Size = UDim2.fromScale(0.67, 0.38), Position = UDim2.fromScale(0.3, 0.52),
+		BackgroundColor3 = Color3.fromRGB(60, 40, 40), ZIndex = 6, Parent = root,
 	}, { UIKit.corner(UDim.new(0.5, 0)) })
-	local fill = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Green, Parent = track }, { UIKit.corner(UDim.new(0.5, 0)) })
-	local hp = UIKit.label({ Parent = track })
-	return { Root = root, Stroke = stroke, Name = name, Shield = shield, Fill = fill, HP = hp }
+	local fill = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Color.Green, ZIndex = 7, Parent = track }, { UIKit.corner(UDim.new(0.5, 0)) })
+	local hp = UIKit.label({ ZIndex = 8, Parent = track })
+	-- ป้ายชวนตี (ซ่อนไว้ก่อน)
+	local tag = UIKit.label({
+		Text = "⚔️ แตะเพื่อโจมตี!", Color = Color3.new(1, 1, 1), Size = UDim2.fromScale(0.9, 0.34),
+		Position = UDim2.fromScale(0.5, 1.02), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 9, Visible = false, Parent = root,
+	})
+	return { Root = root, Stroke = stroke, Name = name, Shield = shield, Fill = fill, HP = hp, Portrait = portrait, Face = face, Tag = tag }
 end
 
-local function setLeader(bar, name, hp, shield)
+-- ใส่ภาพ/อีโมจิผู้นำ (CardData[id].Art = "rbxassetid://..." จะมาก่อนอีโมจิ)
+local function setPortrait(bar, leaderId)
+	if bar.LeaderId == leaderId then return end
+	bar.LeaderId = leaderId
+	local data = leaderId and CardData[leaderId]
+	local art = data and data.Art
+	local hasArt = typeof(art) == "string" and art ~= "" and art ~= "rbxassetid://0"
+	bar.Portrait.Image = hasArt and art or ""
+	bar.Face.Text = (data and data.Emoji) or "👤"
+	bar.Face.Visible = not hasArt
+end
+
+local function setLeader(bar, name, hp, shield, leaderId)
+	setPortrait(bar, leaderId)
 	local max = Config.LEADER_HP
 	bar.Name.Text = name or "ผู้นำ"
 	bar.Shield.Text = (shield or 0) > 0 and ("🛡%d"):format(shield) or ""
@@ -183,6 +213,22 @@ local function call(remote, ...)
 	end)
 end
 
+local pulseTween
+local function setLeaderAttackable(on)
+	local bar = ui.oppLeader
+	if not bar then return end
+	bar.Tag.Visible = on
+	bar.Stroke.Color = on and Theme.Color.Red or Theme.Color.Outline
+	bar.Stroke.Thickness = on and 7 or 4
+	if pulseTween then pulseTween:Cancel() pulseTween = nil end
+	if not bar.Scale then bar.Scale = UIKit.new("UIScale", { Parent = bar.Root }) end
+	bar.Scale.Scale = 1
+	if on then
+		pulseTween = TweenService:Create(bar.Scale, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Scale = 1.06 })
+		pulseTween:Play()
+	end
+end
+
 local function clearSelection()
 	if selected and selected.view.Frame.Parent then selected.view:SetSelected(false) end
 	selected = nil
@@ -190,7 +236,7 @@ local function clearSelection()
 		for _, v in pairs(map) do v:SetTarget(false) end
 	end
 	ui.myLeader.Stroke.Color = Theme.Color.Outline
-	ui.oppLeader.Stroke.Color = Theme.Color.Outline
+	setLeaderAttackable(false)
 	for _, child in ui.actions:GetChildren() do
 		if child:IsA("GuiObject") then child:Destroy() end
 	end
@@ -231,7 +277,11 @@ local function playCard(uid, target)
 end
 
 local function doAttack(targetUid)
-	if not selected or selected.mode ~= "attack" then return end
+	if not selected or selected.mode ~= "attack" then
+		warn("[MatchUI] doAttack ถูกเรียกแต่ไม่ได้อยู่โหมดโจมตี selected=" .. tostring(selected and selected.mode))
+		return
+	end
+	if busy then warn("[MatchUI] doAttack ถูกบล็อก: คำสั่งก่อนหน้ายังไม่ตอบกลับ") return end
 	local attacker = selected.view
 	clearSelection()
 	attacker:Lunge()
@@ -279,8 +329,11 @@ local function selectAttacker(view)
 	for _, v in pairs(views.oppField) do
 		v:SetTarget(not tauntUp or Rules.HasKeyword(v.Card, "Taunt"))
 	end
-	ui.oppLeader.Stroke.Color = tauntUp and Theme.Color.Outline or Theme.Color.Red
-	hint(tauntUp and "มีตัวบัง! ต้องตีมันก่อน 🛡️" or "เลือกเป้าหมายเลย 👊")
+	setLeaderAttackable(not tauntUp)
+	-- ปุ่มตีผู้นำใหญ่ ๆ ใช้ได้ทุกขนาดจอ | ถ้ามีตัวบังจะเทาและบอกเหตุผล
+	actionButton(tauntUp and "🛡️ ตีผู้นำไม่ได้ (มีตัวบัง)" or "⚔️ โจมตีผู้นำ",
+		tauntUp and Theme.Color.Gray or Theme.Color.Red, 0.42, tauntUp,
+		function() doAttack("LEADER") end)
 	actionButton("ยกเลิก", Theme.Color.Gray, 0.2, false, clearSelection)
 	ui.actions.Visible = true
 end
@@ -324,7 +377,12 @@ local function onLeaderClick(which)
 			UIKit.toast(ERR.INVALID_TARGET, Theme.Color.Red)
 		end
 	elseif selected.mode == "attack" and which == "oppLeader" then
-		doAttack("LEADER")
+		if Rules.HasTaunt(state.oppField) then
+			UIKit.shake(ui.oppLeader.Root)
+			UIKit.toast(ERR.TAUNT or "มีตัวบัง! ต้องตีมันก่อน 🛡️", Theme.Color.Red)
+		else
+			doAttack("LEADER")
+		end
 	end
 end
 
@@ -452,8 +510,8 @@ local function render(s)
 		back.Parent = ui.oppHand
 	end
 
-	setLeader(ui.myLeader, s.myLeader, s.myHP, s.myShield)
-	setLeader(ui.oppLeader, s.oppLeader, s.oppHP, s.oppShield)
+	setLeader(ui.myLeader, s.myLeader, s.myHP, s.myShield, s.myLeaderId)
+	setLeader(ui.oppLeader, s.oppLeader, s.oppHP, s.oppShield, s.oppLeaderId)
 	ui.myPile.Text = ("🂠 %d   💀 %d"):format(s.myDeck or 0, s.myGrave or 0)
 	ui.oppPile.Text = ("🂠 %d   💀 %d%s"):format(s.oppDeck or 0, s.oppGrave or 0,
 		(s.oppBank or 0) > 0 and ("   💰ดอง %d"):format(s.oppBank) or "")
@@ -558,9 +616,9 @@ function MatchUI.Build(matchGui, overlayGui, cb)
 	ui.backdrop = MatchBackdrop.new(gui)
 
 	-- ฝั่งศัตรู
-	ui.oppLeader = leaderBar(UDim2.fromScale(0.02, 0.02), Vector2.new(0, 0))
+	ui.oppLeader = leaderBar(UDim2.fromScale(0.5, 0.012), Vector2.new(0.5, 0), UDim2.fromScale(0.3, 0.105))
 	ui.oppLeader.Root.Activated:Connect(function() onLeaderClick("oppLeader") end)
-	ui.oppHand = zone("OppHand", UDim2.fromScale(0.5, -0.035), UDim2.fromScale(0.3, 0.1), { Transparency = 1 })
+	ui.oppHand = zone("OppHand", UDim2.fromScale(0.78, -0.035), UDim2.fromScale(0.26, 0.1), { Transparency = 1 }) -- ขวาของพอร์ตเทรตศัตรู
 	ui.oppField = zone("OppField", UDim2.fromScale(0.5, 0.13), UDim2.fromScale(0.62, 0.22))
 	ui.oppGate = gateZone(UDim2.fromScale(0.11, 0.13))
 	ui.oppGateBack = CardView.back(UDim2.fromScale(0.95, 0.8))

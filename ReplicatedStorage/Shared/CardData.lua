@@ -13,8 +13,8 @@ local function weapon(name, cost, rarity, bonus, freeze, desc, flavor)
 	return { Name = name, Type = "Weapon", Cost = cost, Rarity = rarity, Bonus = bonus, Durability = 2,
 		Freeze = freeze or nil, Desc = desc, Flavor = flavor }
 end
-local function leader(name, ability, desc, flavor)
-	return { Name = name, Type = "Leader", Cost = 0, ATK = 0, HP = Config.LEADER_HP, Rarity = "Legend",
+local function leader(name, ability, desc, flavor, emoji)
+	return { Name = name, Type = "Leader", Emoji = emoji, Cost = 0, ATK = 0, HP = Config.LEADER_HP, Rarity = "Legend",
 		Ability = ability, Desc = desc, Flavor = flavor }
 end
 
@@ -50,7 +50,7 @@ return {
 	BROKEN_UMBRELLA = weapon("ร่มเทพเจ้า (ร่มหัก)", 4, "Epic", 8, false, "สวม: ATK +8 / ปา: ดาเมจ 8", "หักตั้งแต่ซื้อ แต่ยังศักดิ์สิทธิ์"),
 
 	-- ผู้นำ
-	LEADER_LUNG = leader("ลุงกาวผู้ยิ่งใหญ่", "Reroll", "เกตออกย้วย/อึครั้งแรก สุ่มใหม่ให้ 1 ครั้ง", "กาวมาตั้งแต่ยุคเทปคาสเซ็ต"),
-	LEADER_PA   = leader("ป้าดวงเฮง", "LuckyPoop", "เกตออกก้อนอึครั้งแรก เปลี่ยนเป็นธรรมดา", "เดินตกท่อทีไร เจอแบงก์ร้อยทุกที"),
-	LEADER_KID  = leader("เด็กหลังห้อง", "ExtraPoints", "เทิร์นแรกได้พอยต์เพิ่ม 2", "หลับทั้งคาบ แต่ตื่นทันเช็กชื่อ"),
+	LEADER_LUNG = leader("ลุงกาวผู้ยิ่งใหญ่", "Reroll", "เกตออกย้วย/อึครั้งแรก สุ่มใหม่ให้ 1 ครั้ง", "กาวมาตั้งแต่ยุคเทปคาสเซ็ต", "🧓"),
+	LEADER_PA   = leader("ป้าดวงเฮง", "LuckyPoop", "เกตออกก้อนอึครั้งแรก เปลี่ยนเป็นธรรมดา", "เดินตกท่อทีไร เจอแบงก์ร้อยทุกที", "👵"),
+	LEADER_KID  = leader("เด็กหลังห้อง", "ExtraPoints", "เทิร์นแรกได้พอยต์เพิ่ม 2", "หลับทั้งคาบ แต่ตื่นทันเช็กชื่อ", "😴"),
 }

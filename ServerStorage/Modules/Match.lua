@@ -520,11 +520,11 @@ function Match:Broadcast()
 				myHand = me.hand, myField = me.field, myGate = me.gate,
 				myPoints = me.points, mySpent = me.spentThisTurn,
 				myHP = me.leaderHP, myShield = me.shield,
-				myLeader = me.name .. " • " .. me.leader.Name,
+				myLeader = me.name .. " • " .. me.leader.Name, myLeaderId = me.leader.Id,
 				myDeck = #me.deck, myGrave = #me.graveyard,
 				oppField = opp.field, oppGateFilled = opp.gate ~= nil,
 				oppHandCount = #opp.hand, oppHP = opp.leaderHP, oppShield = opp.shield,
-				oppLeader = opp.name .. " • " .. opp.leader.Name,
+				oppLeader = opp.name .. " • " .. opp.leader.Name, oppLeaderId = opp.leader.Id,
 				oppDeck = #opp.deck, oppGrave = #opp.graveyard,
 				oppBank = opp.banking and opp.points or 0,
 			})
