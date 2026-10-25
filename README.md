@@ -6,9 +6,10 @@ Server-authoritative 1v1 card battle with a random "Gate" slot. Version: **Core 
 ```
 ReplicatedStorage/Shared/        Config, Rules, CardData, Decks
 ReplicatedStorage/Shared/UI/     Theme, UIKit, CardView
-ServerStorage/Modules/           GateRNG, CardEffects, BotAI, Match, DataService
+ServerStorage/Modules/           GateRNG, CardEffects, BotAI, Match, DataService, StatsService
 ServerScriptService/             GameServer (creates Remotes, matchmaking, rewards), CardValidator
-StarterPlayer/StarterPlayerScripts/UIClient/   init.client + LobbyUI, MatchUI, GateRoller
+StarterPlayer/StarterPlayerScripts/UIClient/   init.client + LobbyUI, MatchUI, GateRoller, StatsPanel, SettingsPanel,
+                                                TurnBanner, CombatFX, TargetArrow, HandFan, MatchBackdrop
 ```
 `Remotes` is created at runtime by `GameServer`; do not declare it in `default.project.json`.
 
@@ -30,6 +31,12 @@ Bot match, PvP queue, spells (7), weapons, 3 leaders, rewards + streak bounty, D
 Gacha + pity, deck builder, quests, Tower, Ranked, Tournament, weather, emotes, pets, titles,
 spectator, replay, black market, Gawa Pass, leaderboard, report.
 Before launch: swap DataService for ProfileStore, add anti-farming for PvP gems.
+
+## Stats
+`StatsService` keeps lifetime + per-day (Thai time, UTC+7, last 14 days) counters inside the player profile
+(`Data.Stats`, `Data.Daily`). Match calls `match:Track(player, fn)` at the exact point of each event, so every
+number is counted server-side. The lobby "📊 สถิติ" panel reads it through the `GetStats` RemoteFunction.
+Note: the current rules have no draws (`CheckWinner` always picks a winner), so `Draws` stays 0 until a draw rule exists.
 
 ## Rojo setup
 1. Install Rojo (CLI + Studio plugin), see https://rojo.space/docs

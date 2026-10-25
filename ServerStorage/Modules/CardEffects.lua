@@ -33,6 +33,7 @@ local Spells = {}
 
 function Spells.Shield(match, me, _, card)
 	me.shield += card.Effect.Value
+	match:Track(me.player, function(d, S) S.Add(d, "ShieldGained", card.Effect.Value) end)
 	match:Notify(("🛡️ %s ตั้งโล่ฝาหม้อ (กันได้ %d)"):format(me.name, me.shield), "Blue")
 end
 
@@ -41,17 +42,24 @@ function Spells.Slime(match, _, _, _, t)
 	match:Notify(("🟢 %s เหยียบสไลม์! ตีครั้งหน้าพลาดได้ 50%%"):format(t.Name), "Green")
 end
 
-function Spells.Damage(match, _, _, card, t)
+function Spells.Damage(match, me, _, card, t)
+	local dealt = math.max(0, math.min(t.HP, card.Effect.Value))
 	t.HP -= card.Effect.Value
+	match.lastHit[t.Uid] = { by = me.player, card = card.Id }
+	match:Track(me.player, function(d, S) S.Add(d, "DamageToCards", dealt) end)
 	match:Notify(("👋 %s โดน %s %d!"):format(t.Name, card.Name, card.Effect.Value), "Red")
 end
 
 function Spells.Heal(match, me, _, card, t)
 	local v = card.Effect.Value
 	if t == "LEADER" then
+		local gained = math.min(v, Config.LEADER_HP - me.leaderHP)
+		match:Track(me.player, function(d, S) S.Add(d, "HealDone", math.max(0, gained)) end)
 		me.leaderHP = math.min(me.leaderHP + v, Config.LEADER_HP)
 		match:Notify(("💚 %s ฮีลผู้นำ +%d"):format(me.name, v), "Green")
 	else
+		local gained = math.min(v, (t.MaxHP or (t.HP + v)) - t.HP)
+		match:Track(me.player, function(d, S) S.Add(d, "HealDone", math.max(0, gained)) end)
 		t.HP = math.min(t.HP + v, t.MaxHP or (t.HP + v))
 		match:Notify(("💚 %s ฮีล +%d"):format(t.Name, v), "Green")
 	end
@@ -104,18 +112,28 @@ function CardEffects.Prepare(match, me, card, target)
 		if typeof(target) ~= "string" then return nil, "NEED_TARGET" end
 		local ally = find(me.field, target)
 		if ally then
-			return function() CardEffects.Equip(match, ally, card) end
+			return function()
+				match:Track(me.player, function(d, S) S.Add(d, "WeaponsEquipped") end)
+				CardEffects.Equip(match, ally, card)
+			end
 		end
 		if target == "LEADER" then
 			return function()
-				match:DamageLeader(opp, card.Bonus)
+				match:DamageLeader(opp, card.Bonus, me.player)
+				match:Track(me.player, function(d, S) S.Add(d, "WeaponsThrown") end)
 				match:Notify(("🗡️ ปา%sใส่ผู้นำของ %s %d!"):format(card.Name, opp.name, card.Bonus), "Red")
 			end
 		end
 		local enemy = find(opp.field, target)
 		if enemy then
 			return function()
+				local dealt = math.max(0, math.min(enemy.HP, card.Bonus))
 				enemy.HP -= card.Bonus
+				match.lastHit[enemy.Uid] = { by = me.player, card = card.Id }
+				match:Track(me.player, function(d, S)
+					S.Add(d, "WeaponsThrown")
+					S.Add(d, "DamageToCards", dealt)
+				end)
 				if card.Freeze and enemy.HP > 0 then enemy.Frozen = true end
 				match:Notify(("🗡️ ปา%sใส่ %s %d!%s"):format(card.Name, enemy.Name, card.Bonus,
 					card.Freeze and " ❄️แช่แข็ง" or ""), "Red")

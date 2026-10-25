@@ -9,9 +9,11 @@ local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local CardView = require(UIFolder:WaitForChild("CardView"))
 local CardInspector = require(UIFolder:WaitForChild("CardInspector"))
 local SettingsPanel = require(script.Parent:WaitForChild("SettingsPanel"))
+local StatsPanel = require(script.Parent:WaitForChild("StatsPanel"))
 local CardData = require(Shared:WaitForChild("CardData"))
 local Decks = require(Shared:WaitForChild("Decks"))
 local QueueRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Queue")
+local StatsRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("GetStats")
 
 local player = Players.LocalPlayer
 local CENTER = Vector2.new(0.5, 0.5)
@@ -98,6 +100,8 @@ local MENU = {
 	{ Text = "📜 เควสต์", Title = "ภารกิจ", Color = Theme.Color.Green, Build = soon },
 	{ Text = "📖 สมุดการ์ด", Title = "สมุดสะสมการ์ด", Color = Theme.Color.Yellow,
 		Build = function(c) buildCardGrid(c, allCardIds()) end },
+	{ Text = "📊 สถิติ", Title = "สถิติของคุณ", Color = Theme.Color.Blue, Stats = true,
+		Build = function(c) return StatsPanel.Build(c, function() return StatsRemote:InvokeServer() end) end },
 	{ Text = "⚙️ ตั้งค่า", Title = "ตั้งค่า", Color = Theme.Color.Gray, Build = buildSettings },
 }
 
@@ -165,19 +169,21 @@ function LobbyUI.Build(hud, overlay)
 		UIKit.corner(UDim.new(0.3, 0)),
 		UIKit.new("UIPadding", { PaddingTop = UDim.new(0.1, 0), PaddingBottom = UDim.new(0.1, 0) }),
 		UIKit.new("UIGridLayout", {
-			CellSize = UDim2.fromScale(0.18, 1), CellPadding = UDim2.fromScale(0.015, 0),
+			CellSize = UDim2.fromScale(0.15, 1), CellPadding = UDim2.fromScale(0.012, 0),
 			FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center,
 		}),
 	})
 	for i, item in ipairs(MENU) do
-		local panel
+		local panel, panelApi
 		local btn = UIKit.button({
 			Text = item.Text, Color = item.Color, Size = UDim2.fromScale(1, 1), Parent = menu,
 			OnClick = function()
 				if not panel then
 					panel = UIKit.panel(overlay, item.Title, item.Color)
-					item.Build(panel.Content)
+					panelApi = item.Build(panel.Content)
+				elseif item.Stats and panelApi then
+					panelApi.Refresh()
 				end
 				panel.Open()
 			end,

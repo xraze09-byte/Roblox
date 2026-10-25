@@ -22,7 +22,7 @@ end
 
 -- 1) สร้าง Remotes อัตโนมัติ (ต้องทำก่อน require Match)
 local REMOTES = {
-	RemoteFunction = { "PlayCard", "Attack", "Queue" },
+	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats" },
 	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify" },
 }
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -61,6 +61,7 @@ local Decks = require(Shared.Decks)
 local Modules = ServerStorage:WaitForChild("Modules")
 local Match = require(Modules.Match)
 local DataService = require(Modules.DataService)
+local Stats = require(Modules.StatsService)
 
 local ActiveMatches = {} -- [player] = match
 local waiting = nil      -- { player, leader }
@@ -97,15 +98,67 @@ local function lockMovement(player, locked)
 end
 
 -- 3) จบแมตช์: แจกเพชร, บันทึกชนะติดกัน และค่าหัว
-local function onMatchEnded(m, winner, _reason)
+-- บันทึกสถิติแมตช์ของผู้เล่นหนึ่งคน (won: true/false/nil = เสมอ)
+-- reason: LEADER_DOWN | FATIGUE | AFK_LIGHTNING | LEFT | SURRENDER
+local function recordMatchStats(m, player, won, reason, gems, bounty)
+	local data = DataService.GetData(player)
+	if not data then return end
+	local mode = m.Mode == "PvP" and "PvP" or "Bot"
+	local sec = math.max(0, math.floor(os.clock() - (m.startedAt or os.clock())))
+	local side = m.sides[player]
+	local outcome = won == true and "Win" or (won == false and "Loss" or "Draw")
+
+	Stats.Add(data, "Matches")
+	Stats.Add(data, "Matches" .. mode)
+	Stats.Add(data, outcome .. "s")
+	Stats.Add(data, outcome .. "s" .. mode)
+	Stats.Add(data, "PlaySec", sec)
+	Stats.Max(data, "LongestMatchSec", sec)
+	if won == true then
+		Stats.Add(data, "WinSec", sec)
+		Stats.Min(data, "ShortestWinSec", math.max(sec, 1))
+	elseif won == false then
+		Stats.Add(data, "LossSec", sec)
+	end
+
+	-- ได้เล่นก่อนหรือไม่ (ผู้เล่นคนแรกที่ได้เทิร์น)
+	if m.firstPlayer then
+		if m.firstPlayer == player then
+			Stats.Add(data, "MatchesGoingFirst")
+			if won == true then Stats.Add(data, "WinsGoingFirst") end
+		end
+	end
+
+	-- สาเหตุที่จบ (นับให้ฝั่งที่เป็นต้นเหตุเท่านั้น)
+	if won == false then
+		if reason == "SURRENDER" then Stats.Add(data, "Surrenders")
+		elseif reason == "AFK_LIGHTNING" then Stats.Add(data, "AfkLosses")
+		elseif reason == "LEFT" then Stats.Add(data, "Disconnects") end
+	elseif won == true and reason == "LEFT" then
+		Stats.Add(data, "OpponentLeft")
+	end
+
+	if side then
+		Stats.Leader(data, side.leader.Id, "Matches")
+		Stats.Leader(data, side.leader.Id, outcome .. "s")
+	end
+	if gems and gems > 0 then
+		Stats.Add(data, "GemsEarned", gems)
+		Stats.Max(data, "BestGemsOneMatch", gems)
+	end
+	if bounty and bounty > 0 then Stats.Add(data, "BountyEarned", bounty) end
+end
+
+local function onMatchEnded(m, winner, reason)
 	for _, p in m.players do
 		if ActiveMatches[p] == m then ActiveMatches[p] = nil end
 		lockMovement(p, false)
 	end
 	local rewards = {}
 	local loser = m:Opponent(winner)
+	local bounty = 0
 	if m.Mode == "PvP" then
-		local bounty = DataService.GetStreak(loser) * Config.BOUNTY_PER_STREAK
+		bounty = DataService.GetStreak(loser) * Config.BOUNTY_PER_STREAK
 		DataService.RecordResult(winner, true)
 		DataService.RecordResult(loser, false)
 		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_PVP + bounty)
@@ -113,6 +166,17 @@ local function onMatchEnded(m, winner, _reason)
 		if bounty > 0 then m:Notify(("💰 ล้มคนติดค่าหัวได้! โบนัส %d เพชร"):format(bounty), "Yellow") end
 	elseif typeof(winner) == "Instance" then
 		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_BOT)
+	end
+
+	-- สถิติ: บอทไม่มีโปรไฟล์ จึงถูกข้ามใน recordMatchStats เอง
+	-- (กติกาปัจจุบันไม่มีเสมอ: CheckWinner ตัดสินผู้ชนะเสมอ จึงไม่เรียกด้วย won=nil)
+	for _, p in m.players do
+		if typeof(p) == "Instance" then
+			local isWinner = p == winner
+			local ok, err = pcall(recordMatchStats, m, p, isWinner, reason, rewards[p],
+				isWinner and bounty or 0)
+			if not ok then warn("[GameServer] บันทึกสถิติไม่สำเร็จ: " .. tostring(err)) end
+		end
 	end
 	return rewards
 end
@@ -125,6 +189,7 @@ local function startMatch(p1, leader1, p2, leader2, mode)
 	end
 	m.Mode = mode
 	m.OnEnded = onMatchEnded
+	m.GetData = DataService.GetData
 	for _, p in m.players do
 		if typeof(p) == "Instance" then
 			ActiveMatches[p] = m
@@ -162,7 +227,10 @@ end
 Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
 	if not allow(player, "Queue", 0.5) then return false, "SLOW_DOWN" end
 	if mode == "Cancel" then
-		if waiting and waiting.player == player then waiting = nil end
+		if waiting and waiting.player == player then
+			waiting = nil
+			Stats.Add(DataService.GetData(player), "QueueCancel")
+		end
 		return true, "CANCELLED"
 	end
 	if ActiveMatches[player] then return false, "IN_MATCH" end
@@ -172,20 +240,32 @@ Remotes.Queue.OnServerInvoke = function(player, mode, leaderId)
 
 	if mode == "Bot" then
 		if waiting and waiting.player == player then waiting = nil end
+		Stats.Add(DataService.GetData(player), "QueueBot")
 		local bot = { Name = "หุ่นกระบอกโง่ๆ 🤖", IsBot = true }
 		local botLeader = Decks.Leaders[math.random(#Decks.Leaders)]
 		if not startMatch(player, leaderId, bot, botLeader, "Bot") then return false, "SERVER_ERROR" end
 		return true, "STARTED"
 	end
 
+	Stats.Add(DataService.GetData(player), "QueuePvP")
 	local other = waiting
 	if other and other.player ~= player and other.player.Parent and not ActiveMatches[other.player] then
 		waiting = nil
 		if not startMatch(other.player, other.leader, player, leaderId, "PvP") then return false, "SERVER_ERROR" end
+		-- คนที่รออยู่ก่อน: นับเวลารอ | คนที่เพิ่งเข้า: จับคู่ได้ทันที (รอ 0 วินาที)
+		local waited = math.max(0, math.floor(os.clock() - (other.since or os.clock())))
+		local d1, d2 = DataService.GetData(other.player), DataService.GetData(player)
+		Stats.Add(d1, "QueueMatched") Stats.Add(d1, "QueueWaitSec", waited) Stats.Add(d1, "QueueWaitCount")
+		Stats.Add(d2, "QueueMatched") Stats.Add(d2, "QueueWaitCount")
 		return true, "STARTED"
 	end
-	waiting = { player = player, leader = leaderId }
+	waiting = { player = player, leader = leaderId, since = os.clock() }
 	return true, "WAITING"
+end
+
+Remotes.GetStats.OnServerInvoke = function(player)
+	if not allow(player, "GetStats", 1) then return nil end
+	return DataService.GetStats(player)
 end
 
 Remotes.PlayCard.OnServerInvoke = function(player, uid, target)

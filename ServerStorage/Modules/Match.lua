@@ -11,6 +11,7 @@ local Modules = ServerStorage:WaitForChild("Modules")
 local GateRNG = require(Modules.GateRNG)
 local CardEffects = require(Modules.CardEffects)
 local BotAI = require(Modules.BotAI)
+local Stats = require(Modules.StatsService)
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local Match = {}
@@ -72,6 +73,8 @@ end
 function Match.new(p1, p2, deck1, deck2, leader1, leader2)
 	local self = setmetatable({}, Match)
 	self.id = HttpService:GenerateGUID(false)
+	self.startedAt = os.clock()
+	self.lastHit = {} -- [cardUid] = { by = player, card = cardId } ใช้ให้เครดิตการสังหาร (ไม่ส่งให้ client)
 	self.players = { p1, p2 }
 	self.sides = { [p1] = newSide(p1, deck1, leader1), [p2] = newSide(p2, deck2, leader2) }
 	self.bombs = {}
@@ -87,6 +90,16 @@ end
 
 function Match:OtherSide(side)
 	return self.sides[self:Opponent(side.player)]
+end
+
+-- บันทึกสถิติให้ผู้เล่น (บอท/คนที่ยังโหลดข้อมูลไม่เสร็จจะถูกข้ามเงียบ ๆ)
+-- fn(data, Stats) | self.GetData ถูกใส่โดย GameServer
+function Match:Track(player, fn)
+	if typeof(player) ~= "Instance" or not self.GetData then return end
+	local data = self.GetData(player)
+	if not data then return end
+	local ok, err = pcall(fn, data, Stats)
+	if not ok then warn("[Match] Track error: " .. tostring(err)) end
 end
 
 function Match:Notify(text, color)
@@ -105,21 +118,35 @@ function Match:Draw(side, count)
 		local card = table.remove(side.deck)
 		if card then
 			table.insert(side.hand, card)
+			self:Track(side.player, function(d, S) S.Add(d, "CardsDrawn") end)
 		else
 			side.fatigue += 1
 			side.leaderHP -= side.fatigue
 			fatigued = true
+			local dmg = side.fatigue
+			self:Track(side.player, function(d, S)
+				S.Add(d, "FatigueTurns")
+				S.Add(d, "FatigueDamage", dmg)
+				S.Add(d, "DamageTaken", dmg)
+			end)
 			self:Notify(("😵 %s การ์ดหมดกอง! เสีย HP %d"):format(side.name, side.fatigue), "Red")
 		end
 	end
 	return fatigued
 end
 
-function Match:DamageLeader(side, amount)
+function Match:DamageLeader(side, amount, source)
 	if amount <= 0 then return end
 	local absorbed = math.min(side.shield, amount)
 	side.shield -= absorbed
-	side.leaderHP -= amount - absorbed
+	local real = amount - absorbed
+	side.leaderHP -= real
+	if real > 0 then
+		self:Track(side.player, function(d, S) S.Add(d, "DamageTaken", real) end)
+		if source then
+			self:Track(source, function(d, S) S.Add(d, "DamageToLeader", real) end)
+		end
+	end
 	if absorbed > 0 then self:Notify(("🛡️ โล่ฝาหม้อกันไว้ %d"):format(absorbed), "Blue") end
 end
 
@@ -160,17 +187,20 @@ function Match:TickBombs()
 	end
 end
 
-function Match:ElementBonus(attacker, target)
+function Match:ElementBonus(attacker, target, player)
 	if attacker.Element == "Gawa" then
 		if rng:NextInteger(0, 1) == 1 then
 			self:Notify("🪙 ธาตุกาวออกหัว! ATK +2", "Yellow")
+			self:Track(player, function(d, S) S.Add(d, "ElementBonus") end)
 			return 2
 		end
 		self:Notify("🪙 ธาตุกาวออกก้อย... ATK -2")
+		self:Track(player, function(d, S) S.Add(d, "ElementPenalty") end)
 		return -2
 	end
 	if Rules.Beats[attacker.Element] and Rules.Beats[attacker.Element] == target.Element then
 		self:Notify("⚡ ธาตุชนะทาง! ATK +2", "Yellow")
+		self:Track(player, function(d, S) S.Add(d, "ElementBonus") end)
 		return 2
 	end
 	return 0
@@ -198,6 +228,18 @@ function Match:Settle()
 					died = true
 					table.remove(side.field, i)
 					table.insert(side.graveyard, c)
+					local hit = self.lastHit[c.Uid]
+					local killer = hit and hit.by
+					self:Track(side.player, function(d, S)
+						S.Add(d, "CardsLost")
+						S.Card(d, c.Id, "Deaths")
+					end)
+					if killer then
+						self:Track(killer, function(d, S)
+							S.Add(d, "KillsMade")
+							S.Card(d, hit.card, "Kills")
+						end)
+					end
 					CardEffects.OnDeath(self, side, c)
 				end
 			end
@@ -234,11 +276,14 @@ end
 
 function Match:StartTurn(player)
 	if self.ended then return end
+	if not self.firstPlayer then self.firstPlayer = player end
 	self.current = player
 	self.turnToken += 1
 	local token = self.turnToken
 	self.turnEndsAt = workspace:GetServerTimeNow() + Config.TURN_TIME
 	local side = self.sides[player]
+
+	self:Track(player, function(d, S) S.Add(d, "Turns") end)
 
 	-- พอยต์ (ถ้าเทิร์นก่อนไม่ได้ดองไว้ พอยต์ที่เหลือจะหาย)
 	if not side.banking then side.points = 0 end
@@ -257,6 +302,10 @@ function Match:StartTurn(player)
 		side.gate = nil
 		local outcome = self:RollGate(side)
 		GateRNG.Apply(card, outcome)
+		self:Track(side.player, function(d, S)
+			S.Add(d, "GateRolls")
+			S.Add(d, "Gate" .. tostring(outcome.id))
+		end)
 		for _, p in self.players do
 			send(Remotes.GateRolled, p, p == player, card, outcome.id)
 		end
@@ -272,6 +321,7 @@ function Match:StartTurn(player)
 	task.delay(Config.TURN_TIME, function()
 		if self.ended or self.turnToken ~= token then return end
 		side.afk += 1
+		self:Track(player, function(d, S) S.Add(d, "TurnsTimedOut") end)
 		if side.afk > Config.AFK_LIMIT then
 			self:Notify(("⚡ ฟ้าผ่า %s เพราะ AFK!"):format(side.name), "Red")
 			self:EndMatch(self:Opponent(player), "AFK_LIGHTNING")
@@ -301,6 +351,14 @@ function Match:PlayCard(player, uid, target)
 		if not toGate and #me.field >= Config.FIELD_SLOTS then return false, "FIELD_FULL" end
 		table.remove(me.hand, index)
 		self:Spend(me, cost)
+		self:Track(player, function(d, S)
+			S.Add(d, "CardsPlayed")
+			S.Add(d, "CharactersPlayed")
+			S.Add(d, "PointsSpent", cost)
+			S.Add(d, toGate and "PlayedToGate" or "PlayedToField")
+			S.Card(d, card.Id, "Played")
+			S.Card(d, card.Id, toGate and "Gate" or "Field")
+		end)
 		if toGate then
 			card.CanAttack = false
 			me.gate = card
@@ -317,6 +375,12 @@ function Match:PlayCard(player, uid, target)
 		self:Spend(me, card.Cost)
 		table.insert(me.graveyard, card)
 		self:Notify(("✨ %s ใช้ %s"):format(me.name, card.Name))
+		self:Track(player, function(d, S)
+			S.Add(d, "CardsPlayed")
+			S.Add(d, card.Type == "Spell" and "SpellsPlayed" or "WeaponsPlayed")
+			S.Add(d, "PointsSpent", card.Cost)
+			S.Card(d, card.Id, "Played")
+		end)
 		resolve()
 	else
 		return false, "INVALID_CARD"
@@ -347,26 +411,48 @@ function Match:Attack(player, attackerUid, targetUid)
 
 	attacker.CanAttack = false
 	me.afk = 0
+	self:Track(player, function(d, S)
+		S.Add(d, "Attacks")
+		S.Add(d, target and "AttacksAtCard" or "AttacksAtLeader")
+	end)
 
 	if attacker.Slime then
 		attacker.Slime = nil
 		if rng:NextNumber() < 0.5 then
 			self:Notify(("🟢 %s ลื่นสไลม์ ตีพลาด!"):format(attacker.Name), "Green")
+			self:Track(player, function(d, S) S.Add(d, "AttacksMissed") end)
 			self:Commit()
 			return true
 		end
 	end
 
 	if target then
-		local dmg = math.max(0, attacker.ATK + self:ElementBonus(attacker, target))
+		local dmg = math.max(0, attacker.ATK + self:ElementBonus(attacker, target, player))
+		local before = target.HP
 		target.HP -= dmg
-		attacker.HP -= target.ATK
+		-- จำว่าใครตี เพื่อให้ Settle ให้เครดิตการสังหาร (ทั้งฝั่งโจมตีและฝั่งโต้กลับ)
+		if dmg > 0 then self.lastHit[target.Uid] = { by = player, card = attacker.Id } end
+		local counter = target.ATK
+		attacker.HP -= counter
+		if counter > 0 then self.lastHit[attacker.Uid] = { by = self:Opponent(player), card = target.Id } end
+		local dealt = math.max(0, math.min(before, dmg))
+		self:Track(player, function(d, S)
+			S.Add(d, "DamageToCards", dealt)
+			S.Card(d, attacker.Id, "Damage", dealt)
+		end)
+		if counter > 0 then
+			self:Track(self:Opponent(player), function(d, S)
+				S.Add(d, "DamageToCards", counter)
+				S.Card(d, target.Id, "Damage", counter)
+			end)
+		end
 		if attacker.WeaponFreeze and target.HP > 0 then
 			target.Frozen = true
 			self:Notify(("❄️ %s โดนแช่แข็ง!"):format(target.Name), "Blue")
 		end
 	else
-		self:DamageLeader(opp, attacker.ATK)
+		self:DamageLeader(opp, attacker.ATK, player)
+		self:Track(player, function(d, S) S.Card(d, attacker.Id, "Damage", attacker.ATK) end)
 	end
 
 	self:WearWeapon(attacker)
@@ -379,7 +465,14 @@ function Match:EndTurn(player, timedOut)
 	local side = self.sides[player]
 	if not timedOut then side.afk = 0 end
 	side.banking = not side.spentThisTurn
-	if side.banking then self:Notify(("💰 %s ดองพอยต์ไว้!"):format(side.name), "Pink") end
+	if side.banking then
+		self:Notify(("💰 %s ดองพอยต์ไว้!"):format(side.name), "Pink")
+		local banked = side.points
+		self:Track(player, function(d, S)
+			S.Add(d, "TurnsSkipped")
+			S.Add(d, "PointsBanked", banked)
+		end)
+	end
 	for _, c in side.field do
 		c.Slime = nil
 		c.Frozen = nil

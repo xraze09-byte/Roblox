@@ -1,6 +1,9 @@
 -- ServerStorage/Modules/DataService (ModuleScript)
 local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
+
+local StatsService = require(ServerStorage:WaitForChild("Modules"):WaitForChild("StatsService"))
 
 local DEFAULT = { Gems = 100, Wins = 0, Losses = 0, Streak = 0, BestStreak = 0 }
 local AUTOSAVE_INTERVAL = 120
@@ -17,6 +20,7 @@ local function reconcile(data)
 	for k, v in DEFAULT do
 		if data[k] == nil then data[k] = v end
 	end
+	StatsService.Reconcile(data)
 	return data
 end
 
@@ -68,6 +72,17 @@ function DataService.AddGems(player, amount)
 	profile.Data.Gems += amount
 	publish(player, profile.Data)
 	return amount
+end
+
+-- ข้อมูลโปรไฟล์ (ตารางจริง) ให้ GameServer/Match บันทึกสถิติ | คืน nil ถ้ายังโหลดไม่เสร็จ
+function DataService.GetData(player)
+	local profile = profiles[player]
+	return profile and profile.Data or nil
+end
+
+function DataService.GetStats(player)
+	local profile = profiles[player]
+	return profile and StatsService.Snapshot(profile.Data) or nil
 end
 
 function DataService.GetStreak(player)
