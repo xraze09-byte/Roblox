@@ -1,49 +1,55 @@
 -- ReplicatedStorage/Shared/UI/Theme
+-- พาเลตต์ "กาวระเบิด": ใช้ค่าเดียวกับ Style.C เพื่อให้ทุกหน้าจอสีตรงกัน
+local Style = require(script.Parent:WaitForChild("Style"))
+local C = Style.C
+
 local Theme = {}
 
-Theme.Font = Enum.Font.FredokaOne -- ฟอนต์การ์ตูนตัวหนา (ตัวอักษรไทยจะใช้ฟอนต์สำรองของ Roblox แทน)
-Theme.FontBody = Enum.Font.GothamBold
+Theme.Font = Style.Font.Heavy       -- หัวเรื่อง/ตัวเลขใหญ่ (การ์ตูนอ้วน)
+Theme.FontBody = Style.Font.Bold    -- เนื้อความ
+Theme.FontComic = Style.Font.Comic  -- ตัวเอียงแบบคอมิก
 
 Theme.Color = {
-	Outline = Color3.fromRGB(25, 20, 30),
-	Panel   = Color3.fromRGB(255, 250, 235),
-	CardBg  = Color3.fromRGB(255, 248, 225),
-	Table   = Color3.fromRGB(60, 140, 90),
-	Yellow  = Color3.fromRGB(255, 214, 10),
-	Pink    = Color3.fromRGB(255, 105, 180),
-	Blue    = Color3.fromRGB(80, 170, 255),
-	Green   = Color3.fromRGB(90, 210, 110),
-	Red     = Color3.fromRGB(255, 70, 70),
-	Gray    = Color3.fromRGB(150, 150, 160),
+	Outline = C.Ink,
+	Panel   = C.Panel,
+	CardBg  = C.Paper,
+	Table   = C.Felt,
+	Yellow  = C.Accent,
+	Pink    = C.Pink,
+	Blue    = C.Info,
+	Green   = C.Good,
+	Red     = C.Bad,
+	Orange  = C.Orange,
+	Violet  = C.Violet,
+	Gray    = Color3.fromRGB(140, 128, 160),
+	Text    = C.Text,
+	Ink     = C.Ink,
 }
 
-Theme.Rarity = {
-	Common = Color3.fromRGB(160, 160, 170),
-	Rare   = Color3.fromRGB(70, 160, 255),
-	Epic   = Color3.fromRGB(170, 90, 255),
-	Legend = Color3.fromRGB(255, 190, 30),
-	Mystic = Color3.fromRGB(255, 255, 255), -- ใช้คู่กับขอบสีรุ้งใน CardView
-}
+Theme.Rarity = Style.Rarity
+Theme.Tier = Style.Tier
 
 Theme.Element = {
-	Sati = { Text = "สติ",  Color = Color3.fromRGB(80, 200, 255) },
-	Biao = { Text = "เบียว", Color = Color3.fromRGB(255, 90, 90) },
-	Muen = { Text = "มึน",  Color = Color3.fromRGB(180, 120, 255) },
-	Gawa = { Text = "กาว",  Color = Color3.fromRGB(255, 200, 0) },
+	Sati = { Text = "สติ",  Color = Style.Element.Sati },
+	Biao = { Text = "เบียว", Color = Style.Element.Biao },
+	Muen = { Text = "มึน",  Color = Style.Element.Muen },
+	Gawa = { Text = "กาว",  Color = Style.Element.Gawa },
 }
 
 Theme.Keyword = { Rush = "ใจร้อน", Taunt = "ตัวบัง", Necro = "ขุดศพ", Unlucky = "ดวงซวย", Steal = "ขโมย" }
 
+-- ผลช่องเกต (ไม่มีอีโมจิ เพราะฟอนต์การ์ตูนแสดงไม่ได้) Short = ป้ายสั้นบนวงล้อ
 Theme.Gate = {
-	Golden = { Text = "✨ ร่างทองออกแสง x3 ✨", Color = Color3.fromRGB(255, 200, 0) },
-	Pumped = { Text = "💪 ปั่นติด x1.5",       Color = Color3.fromRGB(90, 210, 110) },
-	Normal = { Text = "😐 ธรรมดา x1",         Color = Color3.fromRGB(200, 200, 200) },
-	Droopy = { Text = "😵 ย้วย x0.5",          Color = Color3.fromRGB(150, 170, 255) },
-	Poop   = { Text = "💩 กลายเป็นก้อนอึ",     Color = Color3.fromRGB(140, 90, 50) },
+	Golden = { Text = "ร่างทองออกแสง x3",  Short = "JACKPOT x3", Color = Color3.fromRGB(255, 214, 0), Good = true },
+	Pumped = { Text = "ปั่นติด x1.5",       Short = "ปั่นติด x1.5", Color = C.Good, Good = true },
+	Normal = { Text = "ธรรมดา x1",         Short = "เฉยๆ x1", Color = Color3.fromRGB(220, 220, 235) },
+	Droopy = { Text = "ย้วย x0.5",          Short = "ย้วย x0.5", Color = Color3.fromRGB(130, 160, 255) },
+	Poop   = { Text = "กลายเป็นก้อนอึ",     Short = "เกลือ!!", Color = Color3.fromRGB(150, 92, 40) },
 }
+Theme.GateOrder = { "Golden", "Pumped", "Normal", "Droopy", "Poop" }
 
-Theme.RarityText = { Common = "ธรรมดา", Rare = "หายาก", Epic = "มหากาพย์", Legend = "ตำนาน", Mystic = "ลึกลับ" }
-Theme.TypeText = { Character = "ตัวละคร", Spell = "เวท", Weapon = "อาวุธ", Leader = "ผู้นำ" }
+Theme.RarityText = Style.Name.Rarity
+Theme.TypeText = Style.Name.Type
 -- คำอธิบายคีย์เวิร์ด (ตรงกับ Match.EnterField / CardEffects.OnEnter / CardEffects.OnDeath)
 Theme.KeywordDesc = {
 	Rush = "ลงสนามแล้วโจมตีได้ทันที ไม่ต้องรอเทิร์นถัดไป",
