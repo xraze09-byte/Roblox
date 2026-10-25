@@ -25,12 +25,19 @@ local function defOf(c)
 	return nil
 end
 
+
+-- ชิ้นลอยแยกอิสระ: ขนาดอิงสัดส่วนจอ แต่มีพื้น/เพดานเป็น pixel เพื่อไม่ให้ถูกบีบเป็นแถบเมื่อ viewport เตี้ย
+local function floatLimit(holder, minW, minH, maxW, maxH)
+	UIKit.new("UISizeConstraint", { MinSize = Vector2.new(minW, minH), MaxSize = Vector2.new(maxW or 100000, maxH or 100000), Parent = holder })
+end
+
 ---------------------------------------------------------------- HP
 local function buildHP(self, side)
 	local mine = side == "me"
-	local holder, face = UIKit.comicBox({ Name = side .. "HP", Parent = self.root, Size = UDim2.fromScale(0.28, 0.065),
-		Position = mine and UDim2.fromScale(0.015, 0.05) or UDim2.fromScale(0.985, 0.05),
+	local holder, face = UIKit.comicBox({ Name = side .. "HP", Parent = self.root, Size = UDim2.fromScale(0.26, 0.07),
+		Position = mine and UDim2.new(0, 16, 0, 44) or UDim2.new(1, -16, 0, 44),
 		AnchorPoint = mine and Vector2.zero or Vector2.new(1, 0), Color = C.TableDark, Tilt = mine and -1.5 or 1.5, ZIndex = 20 })
+	floatLimit(holder, 200, 38, 420, 64)
 	local name = UIKit.label({ Text = mine and "เรา" or "ศัตรู", Color = mine and C.Lime or C.Pink, Size = UDim2.new(0.7, 0, 0, 26),
 		Position = UDim2.new(mine and 0 or 1, 0, 0, -4), AnchorPoint = Vector2.new(mine and 0 or 1, 1),
 		AlignX = mine and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right, MaxTextSize = 24, ZIndex = 25, Parent = holder })
@@ -89,7 +96,8 @@ local OFF_CELL = Color3.fromRGB(50, 40, 80)
 
 local function buildPoints(self)
 	local holder, face = UIKit.comicBox({ Name = "Points", Parent = self.root, Size = UDim2.fromScale(0.2, 0.09),
-		Position = UDim2.fromScale(0.015, 0.74), Color = C.TableDark, Tilt = -2, ZIndex = 20 })
+		Position = UDim2.new(0, 16, 1, -16), AnchorPoint = Vector2.new(0, 1), Color = C.TableDark, Tilt = -2, ZIndex = 20 })
+	floatLimit(holder, 190, 46, 340, 78)
 	UIKit.label({ Text = "พลังกาว", Color = C.Lime, Size = UDim2.new(0.5, 0, 0, 24), Position = UDim2.new(0, 6, 0, -4),
 		AnchorPoint = Vector2.new(0, 1), AlignX = Enum.TextXAlignment.Left, MaxTextSize = 22, ZIndex = 25, Parent = holder })
 	local row = UIKit.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(0.68, 0.6), Position = UDim2.fromScale(0.04, 0.5),
@@ -111,7 +119,7 @@ local function buildPoints(self)
 	self.pointsHolder = holder
 
 	self.shieldHint = UIKit.badge(self.root, "🛡 มีโล่ฝาหม้อ! ลงได้ฟรี 0 พอยต์", C.Blue, {
-		Size = UDim2.fromScale(0.21, 0.035), Position = UDim2.fromScale(0.015, 0.69), Tilt = -2, MaxTextSize = 16, ZIndex = 26 })
+		Size = UDim2.fromOffset(250, 28), Position = UDim2.new(0, 16, 1, -86), AnchorPoint = Vector2.new(0, 1), Tilt = -2, MaxTextSize = 16, ZIndex = 26 })
 	self.shieldHint.Visible = false
 
 	-- เกจกระเพื่อมเหมือนเยลลี่
@@ -145,9 +153,10 @@ end
 ---------------------------------------------------------------- Skip
 local function buildSkip(self, onSkip)
 	self.skip, self.skipLabel = UIKit.button({ Name = "Skip", Parent = self.root, Text = "SKIP!", Color = C.Pink,
-		Size = UDim2.fromScale(0.16, 0.1), Position = UDim2.fromScale(0.985, 0.78), AnchorPoint = Vector2.new(1, 0.5),
+		Size = UDim2.fromScale(0.16, 0.1), Position = UDim2.new(1, -16, 1, -34), AnchorPoint = Vector2.new(1, 1),
 		Tilt = 3, MaxTextSize = 48, Lip = 8, Debounce = 0.6, ZIndex = 30,
 		OnClick = function() if onSkip then onSkip() end end })
+	floatLimit(self.skip, 130, 48, 260, 84)
 	self.skipHint = UIKit.label({ Text = "", Color = C.Yellow, Size = UDim2.new(1.2, 0, 0, 22), Position = UDim2.new(0.5, 0, 1, 6),
 		AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 18, ZIndex = 31, Parent = self.skip })
 end
@@ -170,8 +179,8 @@ end
 
 ---------------------------------------------------------------- Timer
 local function buildTimer(self)
-	local holder = UIKit.new("Frame", { Name = "Timer", BackgroundTransparency = 1, Size = UDim2.fromScale(0.08, 0.08),
-		Position = UDim2.fromScale(0.5, 0.02), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 30, Parent = self.root },
+	local holder = UIKit.new("Frame", { Name = "Timer", BackgroundTransparency = 1, Size = UDim2.fromOffset(72, 72),
+		Position = UDim2.new(0.5, 0, 0, 40), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 30, Parent = self.root },
 		{ UIKit.new("UIAspectRatioConstraint", { AspectRatio = 1 }) })
 	self.flames = FX.flames(holder, 29)
 	UIKit.new("Frame", { Name = "Shadow", BackgroundColor3 = C.Shadow, Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(5, 5),
