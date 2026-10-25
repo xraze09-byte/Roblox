@@ -154,6 +154,47 @@ function Style.screen(name, order, parent)
 	return g
 end
 
+
+-- ScrollingFrame ที่ขนาด canvas คำนวณเองจากเนื้อหา
+-- (AutomaticCanvasSize + UIListLayout มีบัคที่รู้กัน: canvas เหลือ 0 แล้วเนื้อหาหายหมด)
+function Style.scroll(p)
+	local f = Style.new("ScrollingFrame", {
+		Name = p.Name or "Scroll", BackgroundTransparency = 1, BorderSizePixel = 0,
+		Position = p.Position or UDim2.new(), Size = p.Size or UDim2.fromScale(1, 1),
+		ScrollBarThickness = 5, ScrollBarImageColor3 = Style.C.Line, CanvasSize = UDim2.new(),
+		ScrollingDirection = Enum.ScrollingDirection.Y, LayoutOrder = p.LayoutOrder or 0, Parent = p.Parent,
+	})
+	local layout = p.Layout
+	if not layout then
+		layout = Style.new("UIListLayout", { Padding = UDim.new(0, p.Gap or 8), SortOrder = Enum.SortOrder.LayoutOrder })
+	end
+	layout.Parent = f
+	local function fit()
+		f.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + (p.Extra or 8))
+	end
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fit)
+	fit()
+	return f, layout
+end
+
+-- ให้ลูกตัวนี้กินพื้นที่ที่เหลือใน UIListLayout (ถ้าเวอร์ชัน Studio ไม่รู้จัก UIFlexItem จะข้ามไปเฉยๆ)
+function Style.fill(gui)
+	pcall(function()
+		local flex = Instance.new("UIFlexItem")
+		flex.FlexMode = Enum.UIFlexMode.Fill
+		flex.Parent = gui
+	end)
+end
+
+-- แถบหัวเรื่องสีของแผง
+function Style.header(parent, text, color, order)
+	local bar = Style.new("Frame", { Name = "Header", BackgroundColor3 = color or Style.C.Violet,
+		Size = UDim2.new(1, 0, 0, 34), LayoutOrder = order or 0, Parent = parent }, { Style.corner(5), Style.pad(4) })
+	Style.text({ Font = Style.Font.Heavy, Text = text, Color = Style.C.Paper, Max = 20, Parent = bar,
+		Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 1, 0) })
+	return bar
+end
+
 -- Toast: ซ้อนกันเป็นแถว ไม่ทับกัน สูงสุด 3 อัน
 Style.toastParent = nil
 local holder, seq, lastText, lastAt = nil, 0, nil, 0
