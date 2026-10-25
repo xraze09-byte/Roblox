@@ -2,10 +2,10 @@
 local Players = game:GetService("Players")
 
 local Guard = {}
-local CAPACITY = 10
-local REFILL = 5
+local CAPACITY = 10      -- ส่งติดกันได้สูงสุด
+local REFILL = 5         -- เติมโควตาต่อวินาที
 local STRIKE_WINDOW = 10
-local STRIKE_KICK = 120
+local STRIKE_KICK = 120  -- ถูกปฏิเสธเกินนี้ภายใน 10 วิ = สแปม
 
 local state = {}
 

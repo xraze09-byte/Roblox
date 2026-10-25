@@ -26,7 +26,7 @@ return {
 	GACHA_COST_1 = 50,
 	GACHA_COST_10 = 450,
 	GACHA_RATES = { Common = 68, Rare = 24, Epic = 7, Legend = 1 },
-	GACHA_EPIC_PITY = 10,
+	GACHA_EPIC_PITY = 10,   -- ภายใน 10 ครั้งได้ Epic ขึ้นไปแน่นอน
 	GACHA_LEGEND_PITY = 60,
 	GACHA_DUPE_REFUND = { Common = 5, Rare = 15, Epic = 40, Legend = 100 },
 }
