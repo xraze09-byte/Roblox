@@ -120,6 +120,7 @@ local function buildPoints(self)
 
 	self.shieldHint = UIKit.badge(self.root, "🛡 มีโล่ฝาหม้อ! ลงได้ฟรี 0 พอยต์", C.Blue, {
 		Size = UDim2.fromOffset(250, 28), Position = UDim2.new(0, 16, 1, -86), AnchorPoint = Vector2.new(0, 1), Tilt = -2, MaxTextSize = 16, ZIndex = 26 })
+	self.shieldHint.Name = "ShieldHint"
 	self.shieldHint.Visible = false
 
 	-- เกจกระเพื่อมเหมือนเยลลี่
@@ -182,6 +183,7 @@ local function buildTimer(self)
 	local holder = UIKit.new("Frame", { Name = "Timer", BackgroundTransparency = 1, Size = UDim2.fromOffset(72, 72),
 		Position = UDim2.new(0.5, 0, 0, 40), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 30, Parent = self.root },
 		{ UIKit.new("UIAspectRatioConstraint", { AspectRatio = 1 }) })
+	self.timerHolder = holder
 	self.flames = FX.flames(holder, 29)
 	UIKit.new("Frame", { Name = "Shadow", BackgroundColor3 = C.Shadow, Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(5, 5),
 		ZIndex = 30, Parent = holder }, { UIKit.corner(UDim.new(1, 0)) })
@@ -246,6 +248,56 @@ function MatchHUD:SetTurn(isMine, endsAt)
 	self:_refreshSkip()
 end
 
+---------------------------------------------------------------- Compact (viewport เตี้ย)
+-- เมื่อ root เตี้ยกว่า COMPACT_H: ลดขนาดชิ้น ย้ายป้ายโล่ไปข้างพลังกาว เอา hint ใต้ปุ่ม Skip ออก ไม่ให้ชิ้นไหนทับกัน
+local COMPACT_H = 360
+function MatchHUD:_layout()
+	local h = self.root.AbsoluteSize.Y
+	local compact = h > 0 and h < COMPACT_H
+	if compact == self.compact then return end
+	self.compact = compact
+	local sc = compact and 0.72 or 1
+	-- HP: ชิดบนสุด
+	for side, b in pairs(self.hp) do
+		local c = b.holder:FindFirstChildOfClass("UISizeConstraint")
+		if c then c.MinSize = Vector2.new(compact and 150 or 200, compact and 28 or 38); c.MaxSize = Vector2.new(420, compact and 40 or 64) end
+		b.holder.Position = side == "me" and UDim2.new(0, 12, 0, compact and 22 or 44) or UDim2.new(1, -12, 0, compact and 22 or 44)
+	end
+	-- Points: มุมซ้ายล่าง เล็กลง
+	local pc = self.pointsHolder:FindFirstChildOfClass("UISizeConstraint")
+	if pc then pc.MinSize = Vector2.new(compact and 150 or 190, compact and 34 or 46); pc.MaxSize = Vector2.new(340, compact and 50 or 78) end
+	self.pointsHolder.Position = UDim2.new(0, 12, 1, compact and -8 or -16)
+	-- ป้ายโล่: วางเหนือกล่องพลังกาว (ขอบซ้ายเดียวกัน) ระยะอิงความสูงจริงของกล่องพลังกาว จึงไม่ทับทุกขนาดจอ
+	local ph = self.pointsHolder.AbsoluteSize.Y
+	if ph <= 0 then ph = compact and 34 or 46 end
+	local pc2 = self.pointsHolder:FindFirstChildOfClass("UISizeConstraint")
+	if pc2 then ph = math.max(pc2.MinSize.Y, math.min(pc2.MaxSize.Y, self.root.AbsoluteSize.Y * 0.09)) end
+	self.shieldHint.Size = UDim2.fromOffset(compact and 200 or 250, compact and 22 or 28)
+	self.shieldHint.AnchorPoint = Vector2.new(0, 1)
+	-- เว้นที่ให้ป้าย "พลังกาว" (สูง ~24 ยื่นขึ้นเหนือกล่อง) แล้วจึงวางป้ายโล่
+	self.shieldHint.Position = UDim2.new(0, 12, 1, -(ph + (compact and 8 or 16) + 28))
+	-- Skip: มุมขวาล่าง hint ใต้ปุ่มซ่อนเมื่อ compact (ข้อความอยู่บนปุ่มแล้ว)
+	local sk = self.skip:FindFirstChildOfClass("UISizeConstraint")
+	if sk then sk.MinSize = Vector2.new(compact and 110 or 130, compact and 36 or 48); sk.MaxSize = Vector2.new(260, compact and 56 or 84) end
+	self.skip.Position = UDim2.new(1, -12, 1, compact and -8 or -34)
+	self.skipHint.Visible = not compact
+	-- Timer: เล็กลงและชิดบน ป้ายตา/ศัตรูอยู่ข้างวง (ไม่ยื่นลงล่าง)
+	local tm = self.timerHolder
+	tm.Size = UDim2.fromOffset(compact and 52 or 72, compact and 52 or 72)
+	tm.Position = UDim2.new(0.5, 0, 0, compact and 6 or 40)
+	if compact then
+		self.turnLbl.AnchorPoint = Vector2.new(0, 0.5)
+		self.turnLbl.Position = UDim2.new(1, 8, 0.5, 0)
+		self.turnLbl.Size = UDim2.new(1.6, 0, 0, 22)
+		self.turnLbl.TextXAlignment = Enum.TextXAlignment.Left
+	else
+		self.turnLbl.AnchorPoint = Vector2.new(0.5, 0)
+		self.turnLbl.Position = UDim2.new(0.5, 0, 1, 8)
+		self.turnLbl.Size = UDim2.new(2.6, 0, 0, 28)
+		self.turnLbl.TextXAlignment = Enum.TextXAlignment.Center
+	end
+end
+
 ---------------------------------------------------------------- API หลัก
 function MatchHUD.new(gui, cb)
 	cb = cb or {}
@@ -256,6 +308,8 @@ function MatchHUD.new(gui, cb)
 	buildPoints(self)
 	buildSkip(self, cb.OnSkip)
 	buildTimer(self)
+	self:_layout()
+	table.insert(self.conns, self.root:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() self:_layout() end))
 	return self
 end
 
