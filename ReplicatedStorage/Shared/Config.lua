@@ -6,6 +6,8 @@ return {
 	POINTS_PER_TURN = 5,
 	MAX_BANKED_POINTS = 15,
 	DRAW_PER_TURN = 2,
+	FIRST_PLAYER_SKIPS_DRAW = true, -- ผู้เล่นคนแรกไม่จั่วในเทิร์นแรก (บาลานซ์: ชนะ ~70% -> ~51%)
+	SECOND_PLAYER_BONUS_POINTS = 1, -- ผู้เล่นคนที่สองได้พอยต์เพิ่มในเทิร์นแรก
 	MAX_HAND = 5,
 	FIELD_SLOTS = 3,
 	TURN_TIME = 120,
