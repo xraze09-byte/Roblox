@@ -59,7 +59,17 @@ local function newInstance(class)
 	function inst:WaitForChild(n) return self:FindFirstChild(n) or error("WaitForChild timeout: "..n.." in "..self.Name, 2) end
 	function inst:Destroy() rawset(self, "_destroyed", true); for _, c in ipairs(table.clone(self._children)) do c:Destroy() end; setParent(self, nil) end
 	function inst:ClearAllChildren() for _, c in ipairs(table.clone(self._children)) do c:Destroy() end end
-	function inst:SetAttribute(k, v) self._attrs[k] = v end
+	function inst:SetAttribute(k, v)
+		local changed = self._attrs[k] ~= v
+		self._attrs[k] = v
+		if changed then local sig = rawget(self, "_attr_" .. tostring(k)); if sig then sig:Fire() end end
+	end
+	function inst:GetAttributeChangedSignal(k)
+		local key = "_attr_" .. tostring(k)
+		local sig = rawget(self, key)
+		if not sig then sig = Signal(); rawset(self, key, sig) end
+		return sig
+	end
 	function inst:GetAttribute(k) return self._attrs[k] end
 	function inst:Clone() local n = newInstance(class); for k, v in pairs(self._props) do n[k] = v end; return n end
 	function inst:IsDescendantOf(a) local p = self._parent while p do if p == a then return true end p = p._parent end return false end
