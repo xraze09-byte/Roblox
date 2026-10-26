@@ -21,7 +21,7 @@ end
 -- 1) Remotes
 local REMOTES = {
 	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats", "GetProfile", "SaveDeck", "Gacha", "ClaimQuest", "GetFarms", "ClaimFarm", "UpgradeFarm" },
-	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify", "ProfileChanged" },
+	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify", "ProfileChanged", "Notification" },
 }
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not Remotes then

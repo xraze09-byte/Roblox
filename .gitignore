@@ -2,3 +2,5 @@
 *.rbxlx
 *.rbxl.lock
 tools/sim/bundle.lua
+rojo.exe
+
