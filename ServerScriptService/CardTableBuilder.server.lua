@@ -47,10 +47,17 @@ for i, x in ipairs({ -7, 0, 7 }) do
 	end
 end
 
--- เก้าอี้ 2 ฝั่ง
+-- เก้าอี้ 2 ฝั่ง: ที่นั่งเป็น Seat จริง (ผู้เล่นนั่งได้) Me=ฝั่งชมพูใกล้กล้อง, Opp=ฝั่งฟ้า
+-- GameServer จะจับผู้เล่นที่เข้าแมตช์มานั่งที่ Seat ชื่อ "SeatMe" และให้ลุกเมื่อแมตช์จบ
 for _, z in ipairs({ 11, -11 }) do
 	local dir, col = z > 0 and 1 or -1, z > 0 and PINK or BLUE
-	part("Seat", Vector3.new(5, 1, 4), CFrame.new(0, 2.5, z), col)
+	local seat = Instance.new("Seat")
+	seat.Name = z > 0 and "SeatMe" or "SeatOpp"
+	seat.Size, seat.Color, seat.Material = Vector3.new(5, 1, 4), col, Enum.Material.SmoothPlastic
+	seat.CFrame = ORIGIN * CFrame.new(0, 2.5, z) * (dir > 0 and CFrame.Angles(0, math.pi, 0) or CFrame.identity) -- หันหน้าเข้าหาโต๊ะ
+	seat.Anchored, seat.CanCollide = true, true
+	seat.TopSurface, seat.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+	seat.Parent = model
 	part("Back", Vector3.new(5, 5, 0.8), CFrame.new(0, 5.5, z + dir * 2), col)
 end
 

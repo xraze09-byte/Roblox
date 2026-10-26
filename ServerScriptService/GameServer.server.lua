@@ -86,10 +86,29 @@ local function isLeader(id)
 	return c and c.Type == "Leader"
 end
 
+-- นั่งที่โต๊ะการ์ดตอนแมตช์ / ลุกตอนจบ (ไม่มีโต๊ะ = ข้ามเงียบๆ ไม่กระทบตรรกะเกม)
+-- คนแรกนั่ง SeatMe ถ้ามีคนนั่งอยู่แล้ว (PvP คนที่สอง) ไปนั่ง SeatOpp
+local function seatAtTable(hum, sit)
+	if not sit then
+		if hum.Sit then hum.Sit = false end
+		return
+	end
+	local tbl = workspace:FindFirstChild("CardTable")
+	if not tbl then return end
+	for _, name in { "SeatMe", "SeatOpp" } do
+		local seat = tbl:FindFirstChild(name)
+		if seat and seat:IsA("Seat") and not seat.Occupant then
+			pcall(function() seat:Sit(hum) end)
+			return
+		end
+	end
+end
+
 local function lockMovement(player, locked)
 	if typeof(player) ~= "Instance" then return end
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
+	seatAtTable(hum, locked)
 	hum.WalkSpeed = locked and 0 or StarterPlayer.CharacterWalkSpeed
 	hum.JumpHeight = locked and 0 or StarterPlayer.CharacterJumpHeight
 	hum.JumpPower = locked and 0 or StarterPlayer.CharacterJumpPower

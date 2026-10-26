@@ -10,6 +10,7 @@ local function effectsOn() return Settings.Get("Effects") ~= false end
 local TableCamera = {}
 local FLY_TIME, TABLE_FOV = 1.4, 55
 local active, savedFov, conn, session = false, 70, nil, 0
+local farSide = false
 
 local function getTable()
 	return workspace:FindFirstChild("CardTable") or workspace:WaitForChild("CardTable", 5)
@@ -22,6 +23,19 @@ local function setControls(on)
 	if not ok or not pm then return end
 	local c = pm:GetControls()
 	if on then c:Enable() else c:Disable() end
+end
+
+
+-- นั่ง SeatOpp (PvP คนที่สอง) = อยู่ฝั่งตรงข้าม: หมุนมุมมอง 180 องศารอบกลางโต๊ะ ให้ฝั่งเราอยู่ล่างจอเสมอ
+local function onFarSide()
+	local char = Players.LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum then return false end
+	-- เซิร์ฟเวอร์สั่งนั่งตอนเริ่มแมตช์ อาจมาถึงช้ากว่า OnStart เล็กน้อย: รอสูงสุด 0.6 วิ
+	local t0 = os.clock()
+	while not hum.SeatPart and os.clock() - t0 < 0.6 do task.wait(0.05) end
+	local seat = hum.SeatPart
+	return seat ~= nil and seat.Name == "SeatOpp"
 end
 
 local function stop() if conn then conn:Disconnect(); conn = nil end end
@@ -48,6 +62,13 @@ function TableCamera.Enter(onArrived)
 	local felt = tbl:FindFirstChild("Felt", true)
 	local goal = point.CFrame
 	local focus = felt and felt.Position or (goal * CFrame.new(0, 0, -20)).Position
+	if onFarSide() then
+		local pivot = CFrame.new(focus)
+		goal = pivot * CFrame.Angles(0, math.pi, 0) * pivot:Inverse() * goal
+		farSide = true
+	else
+		farSide = false
+	end
 	local start, startFov = cam.CFrame, cam.FieldOfView
 	local mid = start.Position:Lerp(goal.Position, 0.5) + Vector3.new(0, 14, 0)
 	local t0, arrived = os.clock(), false
@@ -103,7 +124,8 @@ end
 -- วงซัมมอน 3D บนโต๊ะเรืองแสงตอนลงการ์ด (ทำงานฝั่ง client เท่านั้น ผู้เล่นอื่นไม่เห็น)
 function TableCamera.Pulse(side, index, color)
 	local tbl = workspace:FindFirstChild("CardTable")
-	local ring = tbl and tbl:FindFirstChild((side == "me" and "Me" or "Opp") .. index, true)
+	local mine = (side == "me") ~= farSide -- นั่งฝั่งไกล: วง "me" ของเราคือวงชุด Opp บนโต๊ะ
+	local ring = tbl and tbl:FindFirstChild((mine and "Me" or "Opp") .. index, true)
 	if not ring or not effectsOn() then return end
 	local wave = ring:Clone()
 	wave.Name, wave.Transparency = "Pulse", 0.05
