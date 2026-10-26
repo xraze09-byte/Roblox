@@ -247,8 +247,10 @@ local function openRadial(owner, items, radius, a0, a1)
 	for i, it in items do
 		local t = (n == 1) and 0.5 or (i - 1) / (n - 1)
 		local a = math.rad(a0 + (a1 - a0) * t)
-		local px = math.clamp(c.X + math.cos(a) * radius, bw / 2 + EDGE, screen.X - bw / 2 - EDGE)
-		local py = math.clamp(c.Y + math.sin(a) * radius, bh / 2 + EDGE, screen.Y - bh / 2 - EDGE)
+		-- max ต้องไม่ต่ำกว่า min เสมอ (หน้าต่างเตี้ย/ScreenGui ยังไม่ได้ขนาด → math.clamp โยน error แล้วเมนูไม่เปิด)
+		local minX, minY = bw / 2 + EDGE, bh / 2 + EDGE
+		local px = math.clamp(c.X + math.cos(a) * radius, minX, math.max(minX, screen.X - bw / 2 - EDGE))
+		local py = math.clamp(c.Y + math.sin(a) * radius, minY, math.max(minY, screen.Y - bh / 2 - EDGE))
 		local b
 		b = blobButton(holder, it.Text, it.Color, UDim2.fromOffset(bw, bh), function()
 			if not it.Keep then closePopup() end

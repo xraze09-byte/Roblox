@@ -74,7 +74,19 @@ local function newInstance(class)
 	end
 	function inst:FindFirstChildOfClass(cn) for _, c in ipairs(self._children) do if c.ClassName == cn then return c end end end
 	function inst:FindFirstChildWhichIsA(cn) for _, c in ipairs(self._children) do if c:IsA(cn) then return c end end end
-	function inst:WaitForChild(n) return self:FindFirstChild(n) or error("WaitForChild timeout: "..n.." in "..self.Name, 2) end
+	-- เหมือน Roblox จริง: มี timeout → รอแล้วคืน nil ; ไม่มี timeout → รอตลอดกาล (yield ไม่กลับ) ; ถ้าไม่ได้อยู่ใน coroutine ที่ yield ได้ → throw ให้เห็น
+	function inst:WaitForChild(n, timeout)
+		local found = self:FindFirstChild(n)
+		if found then return found end
+		if not M.realWait then error("WaitForChild timeout: "..n.." in "..self.Name, 2) end
+		local t0 = M.clock and M.clock() or 0
+		while true do
+			found = self:FindFirstChild(n)
+			if found then return found end
+			if timeout and (M.clock() - t0) >= timeout then return nil end
+			task.wait(0.05)
+		end
+	end
 	function inst:Destroy() rawset(self, "_destroyed", true); for _, c in ipairs(table.clone(self._children)) do c:Destroy() end; setParent(self, nil) end
 	function inst:ClearAllChildren() for _, c in ipairs(table.clone(self._children)) do c:Destroy() end end
 	function inst:SetAttribute(k, v)

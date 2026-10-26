@@ -14,7 +14,7 @@ local total = 0
 for _, sz in ipairs(sizes) do
 	local VW, VH = sz[1], sz[2]
 	hudGui, overlay = H.newInstance("ScreenGui"), H.newInstance("ScreenGui")
-	rawset(hudGui, "AbsoluteSize", { X = VW, Y = VH })
+	hudGui.AbsoluteSize = H.globals.Vector2.new(VW, VH)
 	FloatHUD.Build(hudGui, overlay, { OnModal = function() end })
 	local items = {}
 	for _, d in ipairs(hudGui:GetChildren()) do
