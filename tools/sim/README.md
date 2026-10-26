@@ -14,3 +14,7 @@ Balance (Config.lua): `FIRST_PLAYER_SKIPS_DRAW = true` and `SECOND_PLAYER_BONUS_
 UI tests (run the same way, e.g. `python3 build.py t_matchui.lua && luau bundle.lua`):
 - `t_perf_cardface.lua` Perf levels (incl. FPS auto-downgrade, lock Low on 2nd drop), CardFace API for every card type, HandFan, UIKit.shake, Style.scroll.
 - `t_matchui.lua` MatchUI full cycle: match 1 -> MatchEnded -> back to lobby -> match 2; checks Perf.SetMatch and that late StateUpdate is ignored.
+- `t_rules.lua` combat/turn rules v2: element bonus (incl. deterministic Gawa), counter-attack with element, frozen can't attack/counter, banking only on a true skip, gate slot reserved so a gated card can never get stuck; 200 bot games.
+- `t_matchui_sizes.lua` MatchUI v2 layout overlap/off-screen check.
+
+Balance note (t_sim, 500 games): after the combat/turn rule changes first player wins ~46% (231/500) instead of ~50% (249/500); the second-player compensation in Config may now be slightly too strong.

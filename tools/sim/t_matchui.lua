@@ -42,6 +42,7 @@ check("timer loop 120 frames", okT)
 
 -- จบแมตช์
 ev("MatchEnded"):Fire(true, "LEADER_DOWN", "m1", 10)
+H.M.pump(2)
 check("Perf back to High after MatchEnded", Perf.Name() == "High", Perf.Name())
 -- StateUpdate ที่มาช้าหลังจบ ห้ามเปิด Perf กลับ
 ev("StateUpdate"):Fire(state("m1", true, 3))
@@ -54,9 +55,8 @@ local pool = {}
 for _, r in ipairs({ gui, overlay, H.game:GetService("Players").LocalPlayer and H.game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui") }) do
 	if r then for _, d in ipairs(r:GetDescendants()) do table.insert(pool, d) end end
 end
-for _, d in ipairs(pool) do if d.ClassName == "TextButton" and tostring(d.Text):find("กลับล็อบบี้") then back = d end end
+for _, d in ipairs(pool) do if d.ClassName == "TextButton" and tostring(d.Text):find("กลับล็อบบี้", 1, true) then back = d end end
 if not back then print("buttons seen:", #pool) end
-local t0 = os.clock() while os.clock() - t0 < 0.3 do end -- ผ่าน debounce ของปุ่ม
 check("back button found", back ~= nil)
 if back then back.Activated:Fire() end
 check("exit invoked", exited == 1, exited)

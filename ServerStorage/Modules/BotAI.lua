@@ -21,9 +21,10 @@ local function strongest(field, filter)
 end
 
 local function chooseBoard(me)
-	local fieldFree = #me.field < Config.FIELD_SLOTS
-	if me.gate == nil and (not fieldFree or rng:NextNumber() < 0.25) then return "Gate", true end
-	if fieldFree then return "Field", true end
+	local gateOk = me.gate == nil and #me.field < Config.FIELD_SLOTS
+	local fieldOk = Rules.FieldFree(#me.field, me.gate ~= nil)
+	if gateOk and (not fieldOk or rng:NextNumber() < 0.25) then return "Gate", true end
+	if fieldOk then return "Field", true end
 	return nil, false
 end
 
