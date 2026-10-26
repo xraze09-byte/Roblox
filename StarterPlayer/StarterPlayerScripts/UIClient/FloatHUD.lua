@@ -814,10 +814,24 @@ function FloatHUD.Build(hudGui, overlayGui, callbacks)
 	Juice.wobble(gemsLabel, { Amp = 2, Rot = 2, Speed = 1.2 })
 
 	-- ขวา: สู้/เมนู   ซ้าย: เด็ค/กาชา   (เลี่ยงมุมล่างที่เป็นจอยสติ๊ก/ปุ่มกระโดดบนมือถือ)
-	makeFab("Battle", "⚔️", "สู้!", C.Red, UDim2.new(1, -72, 0.44, 0), 96, openBattle)
-	local more = makeFab("More", "☰", "เมนู", C.Purple, UDim2.new(1, -64, 0.2, 0), 64, openMore)
-	makeFab("Deck", "🃏", "เด็ค", C.Blue, UDim2.new(0, 64, 0.3, 0), 76, openDeck)
-	makeFab("Gacha", "🎰", "กาชา", C.Pink, UDim2.new(0, 64, 0.3, 100), 76, openGacha)
+	-- ตำแหน่งเป็นพิกเซลคงที่ เรียงลงมาจากมุมบนของแต่ละฝั่ง (ไม่ใช้สัดส่วนความสูงจอ) เพื่อไม่ให้ปุ่ม/ป้ายซ้อนกันเมื่อ viewport เตี้ย
+	-- แต่ละปุ่มกินที่: วงกลม + ป้ายชื่อใต้วงกลม + ช่องว่าง   จอเตี้ยมาก → ย่อปุ่มลงตามสัดส่วน ไม่ให้ล้นขอบล่าง
+	local TOP, GAP, TAG = 96, 14, 28   -- TOP เว้นแถบ Roblox + ป้ายเพชรกลางจอ
+	local H = hud.AbsoluteSize.Y
+	local avail = (H > 0 and H or 720) - TOP - 12
+	local function need(a, b) return a + b + TAG * 2 + GAP end
+	local k = math.clamp(avail / need(64, 96), 0.55, 1)      -- คอลัมน์ขวา: เมนู + สู้!
+	local kl = math.clamp(avail / need(76, 76), 0.55, 1)     -- คอลัมน์ซ้าย: เด็ค + กาชา
+	local moreSize, battleSize = math.floor(64 * k), math.floor(96 * k)
+	local deckSize, gachaSize = math.floor(76 * kl), math.floor(76 * kl)
+	local moreY = TOP + moreSize / 2
+	local battleY = moreY + moreSize / 2 + TAG + GAP + battleSize / 2
+	local deckY = TOP + deckSize / 2
+	local gachaY = deckY + deckSize / 2 + TAG + GAP + gachaSize / 2
+	local more = makeFab("More", "☰", "เมนู", C.Purple, UDim2.new(1, -64, 0, moreY), moreSize, openMore)
+	makeFab("Battle", "⚔️", "สู้!", C.Red, UDim2.new(1, -72, 0, battleY), battleSize, openBattle)
+	makeFab("Deck", "🃏", "เด็ค", C.Blue, UDim2.new(0, 64, 0, deckY), deckSize, openDeck)
+	makeFab("Gacha", "🎰", "กาชา", C.Pink, UDim2.new(0, 64, 0, gachaY), gachaSize, openGacha)
 	moreBadge = makeBadge(more)
 
 	Net.on("ProfileChanged", applyProfile)

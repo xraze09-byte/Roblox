@@ -15,7 +15,13 @@ V2.__eq = function(a, b) return a.X == b.X and a.Y == b.Y end
 V2.__index = function(t, k) if k == "Magnitude" then return math.sqrt(t.X * t.X + t.Y * t.Y) end end
 M.vec2Factory = vec2
 local Vector2 = { new = vec2, zero = vec2(0,0) }
-local Vector3 = { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0} end }
+local V3Mt = {}
+local function v3(x,y,z) return setmetatable({X=x or 0,Y=y or 0,Z=z or 0}, V3Mt) end
+V3Mt.__add = function(a,b) return v3(a.X+b.X,a.Y+b.Y,a.Z+b.Z) end
+V3Mt.__sub = function(a,b) return v3(a.X-b.X,a.Y-b.Y,a.Z-b.Z) end
+V3Mt.__mul = function(a,b) if type(b) == "number" then return v3(a.X*b,a.Y*b,a.Z*b) elseif type(a) == "number" then return v3(b.X*a,b.Y*a,b.Z*a) end return v3(a.X*b.X,a.Y*b.Y,a.Z*b.Z) end
+V3Mt.__index = function(t,k) if k == "Lerp" then return function(a,b,al) return v3(a.X+(b.X-a.X)*al, a.Y+(b.Y-a.Y)*al, a.Z+(b.Z-a.Z)*al) end end if k == "Magnitude" then return math.sqrt(t.X^2+t.Y^2+t.Z^2) end end
+local Vector3 = { new = v3 }
 Vector3.zero = Vector3.new()
 local UDim = { new = function(s, o) return { Scale = s or 0, Offset = o or 0 } end }
 local UDim2Mt = {}
@@ -49,7 +55,19 @@ local Random = { new = function(seed)
 	return { NextNumber = function(_, lo, hi) return (lo or 0) + nxt() * ((hi or 1) - (lo or 0)) end,
 		NextInteger = function(_, lo, hi) return lo + math.floor(nxt() * (hi - lo + 1)) end }
 end }
-local CFrame = { new = function() return {} end, Angles = function() return {} end }
+local CFMt = {}
+local function cf(x,y,z) return setmetatable({ Position = { X = x or 0, Y = y or 0, Z = z or 0 }, X = x or 0, Y = y or 0, Z = z or 0 }, CFMt) end
+CFMt.__index = function(t, k)
+	if k == "Rotation" then return t end
+	if k == "Lerp" then return function(a, b, al) return a end end
+	if k == "Inverse" then return function(a) return a end end
+	if k == "LookVector" or k == "UpVector" or k == "RightVector" then return { X=0,Y=0,Z=-1 } end
+	return nil
+end
+CFMt.__mul = function(a, b) return a end
+local CFrame = { new = function(x,y,z) if type(x) == "table" then return cf(x.X,x.Y,x.Z) end return cf(x,y,z) end,
+	Angles = function() return cf() end, lookAt = function() return cf() end, identity = cf() }
+
 
 -- Enum: any Enum.X.Y resolves to a stable table
 local Enum = setmetatable({}, { __index = function(t, k)
