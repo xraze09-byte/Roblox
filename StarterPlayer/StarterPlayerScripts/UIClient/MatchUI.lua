@@ -13,6 +13,7 @@ local Rules = require(Shared:WaitForChild("Rules"))
 local CardData = require(Shared:WaitForChild("CardData"))
 local Net = require(script.Parent:WaitForChild("Net"))
 local Perf = require(Shared:WaitForChild("UI"):WaitForChild("Perf"))
+local Juice do local m = script.Parent:FindFirstChild("Juice"); if m then local ok, r = pcall(require, m); if ok then Juice = r end end end
 
 local MatchUI = {}
 
@@ -557,6 +558,10 @@ function MatchUI.Build(gui, overlay, cb)
 			ok, err = Net.invoke("Attack", cur.uid, key)
 		else
 			ok, err = Net.invoke("PlayCard", cur.uid, key ~= "NOW" and key or nil)
+			-- ลงการ์ดสำเร็จ: ระเบิดเอฟเฟกต์กลางสนามฝั่งเรา (วางไว้ใน ScreenGui จึงไม่หายตอน render ใหม่)
+			if ok and Juice and myRow and myRow.Parent then
+				Juice.burstOn(myRow, "ปั้ง!!", Color3.fromRGB(150, 255, 90))
+			end
 		end
 		if not ok then toast(errMsg(err), C.Red) end
 	end

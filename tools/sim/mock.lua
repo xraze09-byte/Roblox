@@ -32,6 +32,11 @@ local ClassIs = {
 	Frame = { GuiObject=1, Frame=1 }, ScrollingFrame = { GuiObject=1, ScrollingFrame=1 },
 	TextLabel = { GuiObject=1, TextLabel=1 }, ImageLabel = { GuiObject=1, ImageLabel=1 },
 	TextBox = { GuiObject=1, TextBox=1 },
+	-- ฉาก 3D: Part/Seat/MeshPart ฯลฯ เป็น BasePart ใน Roblox จริง (WorldPrompts เช็ก IsA("BasePart"))
+	Part = { BasePart=1, PVInstance=1, Part=1 }, Seat = { BasePart=1, PVInstance=1, Seat=1 },
+	MeshPart = { BasePart=1, PVInstance=1, MeshPart=1 }, WedgePart = { BasePart=1, PVInstance=1, WedgePart=1 },
+	SpawnLocation = { BasePart=1, PVInstance=1, SpawnLocation=1 },
+	ScreenGui = { LayerCollector=1, ScreenGui=1 }, BillboardGui = { LayerCollector=1, BillboardGui=1 },
 }
 
 local function newInstance(class)
@@ -83,7 +88,10 @@ local function newInstance(class)
 	function inst:Fire(...) self.Event:Fire(...) end -- BindableEvent
 	function inst:TweenSize() end function inst:TweenPosition() end
 	function inst:Play() end function inst:Stop() end function inst:Pause() end
-	inst._props.AbsoluteSize = {X=800,Y=600}; inst._props.AbsolutePosition = {X=0,Y=0}; inst._props.AbsoluteContentSize = {X=0,Y=0}
+	-- ค่าเริ่มต้นเหมือน Roblox จริง (ไม่งั้นโค้ดที่เช็ก .Enabled / .Visible จะเห็น nil)
+	if class == "ScreenGui" or class == "BillboardGui" or class == "SurfaceGui" then inst._props.Enabled = true end
+	local mk = M.vec2Factory or function(x, y) return {X=x,Y=y} end
+	inst._props.AbsoluteSize = mk(800,600); inst._props.AbsolutePosition = mk(0,0); inst._props.AbsoluteContentSize = mk(0,0)
 	mt.__index = function(t, k)
 		local v = rawget(t, "_props")[k]
 		if v ~= nil then return v end

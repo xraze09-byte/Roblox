@@ -894,6 +894,18 @@ function LobbyUI.Build(hud, overlay)
 		paintPvp(); updateTop()
 	end
 
+	-- ปุ่มกลับ: ใช้ปิดหน้าเต็มเมื่อเปิดจากเมนู ☰ ของ FloatHUD
+	local backBtn = chunkyButton(root, "✕ กลับ", C.Red, function()
+		closeWindows()
+		if LobbyUI.OnClose then LobbyUI.OnClose() end
+	end)
+	backBtn.AnchorPoint = Vector2.new(1, 1)
+	backBtn.Position = UDim2.new(0.985, 0, 0.985, 0)
+	backBtn.Size = UDim2.fromOffset(120, 44)
+	backBtn.ZIndex = 50
+
+	function LobbyUI.OpenTab(id) if openTab then openTab(id) end end
+
 	paintTabs(); updateTop(); render()
 	LobbyUI.Refresh()
 end

@@ -4,7 +4,16 @@ local newInstance, Signal = M.newInstance, M.Signal
 local REPO = _G_REPO
 
 -- ───── datatypes ─────
-local function vec2(x, y) return { X = x or 0, Y = y or 0 } end
+local V2 = {}
+local function vec2(x, y) return setmetatable({ X = x or 0, Y = y or 0 }, V2) end
+local function asv(a) return type(a) == "number" and { X = a, Y = a } or a end
+V2.__add = function(a, b) a, b = asv(a), asv(b); return vec2(a.X + b.X, a.Y + b.Y) end
+V2.__sub = function(a, b) a, b = asv(a), asv(b); return vec2(a.X - b.X, a.Y - b.Y) end
+V2.__mul = function(a, b) a, b = asv(a), asv(b); return vec2(a.X * b.X, a.Y * b.Y) end
+V2.__div = function(a, b) a, b = asv(a), asv(b); return vec2(a.X / b.X, a.Y / b.Y) end
+V2.__eq = function(a, b) return a.X == b.X and a.Y == b.Y end
+V2.__index = function(t, k) if k == "Magnitude" then return math.sqrt(t.X * t.X + t.Y * t.Y) end end
+M.vec2Factory = vec2
 local Vector2 = { new = vec2, zero = vec2(0,0) }
 local Vector3 = { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0} end }
 Vector3.zero = Vector3.new()
@@ -77,7 +86,19 @@ svc("UserInputService", { InputBegan = Signal(), InputEnded = Signal(), InputCha
 svc("GuiService", { GetGuiInset = function() return vec2(0,36), vec2(0,0) end })
 svc("HttpService", { GenerateGUID = function() return tostring(math.random(1e9)) end, JSONEncode = function() return "{}" end })
 svc("DataStoreService"); svc("MessagingService"); svc("TextService"); svc("ContentProvider"); svc("Lighting")
-svc("CollectionService"); svc("StarterGui", { SetCore = function() end }); svc("MarketplaceService")
+do -- CollectionService จำลอง: เก็บแท็กจริง + สัญญาณ added/removed (WorldPrompts ใช้)
+	local tagged, added, removed = {}, {}, {}
+	svc("CollectionService", {
+		AddTag = function(_, inst, tag) tagged[tag] = tagged[tag] or {}; table.insert(tagged[tag], inst)
+			if added[tag] then added[tag]:Fire(inst) end end,
+		GetTagged = function(_, tag) return tagged[tag] or {} end,
+		GetInstanceAddedSignal = function(_, tag) added[tag] = added[tag] or Signal(); return added[tag] end,
+		GetInstanceRemovedSignal = function(_, tag) removed[tag] = removed[tag] or Signal(); return removed[tag] end,
+	})
+end
+svc("ContextActionService", { BindAction = function(_, name, fn) M.boundActions = M.boundActions or {}; M.boundActions[name] = fn end,
+	UnbindAction = function() end })
+svc("StarterGui", { SetCore = function() end }); svc("MarketplaceService")
 svc("TeleportService"); svc("ServerScriptService"); svc("StarterPlayer")
 
 local game = newInstance("DataModel"); game.Name = "game"
