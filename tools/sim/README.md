@@ -21,3 +21,15 @@ Balance note (t_sim, 500 games): after the combat/turn rule changes first player
 - `t_lobby.lua` (rewritten for Lobby v2) top bar / left nav / content window never overlap or leave the screen across 8 viewport sizes.
 - `t_lobby_v2.lua` Lobby v2 behavior: every tab renders, stats translated, quest badge, PvP queue timer + cancel, tower button, ProfileChanged floor update, profile retry.
 - `t_tower.lua` tower server logic on a real Match: boss shield/buff per floor, full match plays out, reward formula, floor progression, DataService persists TowerFloor.
+
+Real-player-path tests (added after the "everything is buggy" report; they drive the REAL GameServer + REAL client UI, not hand-made state):
+- `t_server_fuzz.lua` fires every Remote with nil/NaN/huge/wrong-type args against the real GameServer: expects no throw, no kick.
+- `t_e2e.lua` full server journeys: profile, Bot/Tower/PvP, surrender, leave mid-match, rejoin persistence, SaveDeck/Gacha/Quest/Farm.
+- `t_win_bot.lua` / `t_win_tower.lua` rigged wins: Bot pays REWARD_WIN_BOT, Tower pays BASE+floor*PER_FLOOR and advances one floor.
+- `t_bridge.lua` / `t_tap.lua` real MatchUI wired to the real server through the remotes; taps cards/slots exactly like a player.
+- `t_uiplay.lua` auto-plays N full matches by tapping real buttons only (field, spells, attacks, end turn).
+- `t_gate_weapon.lua` gate play (cost discount, "next turn roll" label, roll result) and weapon equip through the UI.
+- `t_lobby_real.lua` / `t_lobby_data.lua` clicks every FAB/popup row; checks gems label follows ProfileChanged, deck popup count, Save button.
+- `mock.lua` now has a STRICT property whitelist (strict_props.json): writing a property that does not exist on the real Roblox class is recorded in `H.M.invalid` (real Roblox would throw).
+
+Result on main 313b642: all pass, 0 real bugs found by these; every failure seen while writing them was a harness issue.

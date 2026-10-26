@@ -39,6 +39,17 @@ local ClassIs = {
 	ScreenGui = { LayerCollector=1, ScreenGui=1 }, BillboardGui = { LayerCollector=1, BillboardGui=1 },
 }
 
+local STRICT = STRICT_PROPS or {}
+local STRICT_SET = {}
+for cls, list in pairs(STRICT) do local s = {}; for _, p in ipairs(list) do s[p] = true end STRICT_SET[cls] = s end
+M.invalid = {}
+local function flag(kind, class, k)
+	local key = kind .. " " .. class .. "." .. tostring(k)
+	local tb = debug and debug.traceback and debug.traceback("", 3) or ""
+	local where = tb:match("([%w_/%.]+%.lua:%d+)") or tb:match("(%S+:%d+)") or "?"
+	local e = M.invalid[key]
+	if not e then M.invalid[key] = { n = 1, where = where } else e.n += 1 end
+end
 local function newInstance(class)
 	local inst = { ClassName = class, Name = class, _children = {}, _attrs = {}, _props = {}, _parent = nil }
 	local mt = {}
@@ -105,6 +116,8 @@ local function newInstance(class)
 		return nil
 	end
 	mt.__newindex = function(t, k, v)
+		local ss = STRICT_SET[class]
+		if ss and type(k) == "string" and not ss[k] and k:sub(1,1) ~= "_" and not SIGNALS[k] then flag("SET", class, k) end
 		if k == "Parent" then setParent(t, v) return end
 		if k == "Name" then rawset(t, "Name", v) return end
 		if k == "AbsoluteSize" then

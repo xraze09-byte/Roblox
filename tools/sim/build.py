@@ -18,7 +18,10 @@ def lq(s):
     while ("]" + "=" * lvl + "]") in s: lvl += 1
     return "[" + "=" * lvl + "[\n" + s + "]" + "=" * lvl + "]"
 
-emb = "local SOURCES = {}\n" + "".join(f'SOURCES["{k}"] = {lq(v)}\n' for k, v in sorted(files.items()))
+import json as _j
+_sp = _j.load(open("strict_props.json"))
+_lua_sp = "local STRICT_PROPS = {" + ",".join('["%s"]={%s}' % (k, ",".join('"%s"' % p for p in v)) for k, v in _sp.items()) + "}\n"
+emb = _lua_sp + "local SOURCES = {}\n" + "".join(f'SOURCES["{k}"] = {lq(v)}\n' for k, v in sorted(files.items()))
 
 # patch env.lua: replace io-based mounting with SOURCES-based
 env = env.replace('local M = require("./mock")', 'local M = MOCK')
