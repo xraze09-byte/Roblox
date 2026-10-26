@@ -77,7 +77,19 @@ function TableCamera.Enter(onArrived)
 	local t0, arrived = os.clock(), false
 
 	stop()
+	local function failSafe(err)
+		warn("[TableCamera] กล้องผิดพลาด คืนกล้องให้ผู้เล่น: " .. tostring(err))
+		stop()
+		active = false
+		cam.CameraType = Enum.CameraType.Custom
+		local h = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if h then cam.CameraSubject = h end
+		cam.FieldOfView = savedFov
+		setControls(true)
+		if not arrived and onArrived then arrived = true; task.spawn(onArrived) end
+	end
 	conn = RunService.RenderStepped:Connect(function()
+		local okFrame, errFrame = pcall(function()
 		if cam.CameraType ~= Enum.CameraType.Scriptable then cam.CameraType = Enum.CameraType.Scriptable end
 		local a = math.clamp((os.clock() - t0) / FLY_TIME, 0, 1)
 		if a < 1 then
@@ -96,6 +108,8 @@ function TableCamera.Enter(onArrived)
 			local sway = effectsOn() and CFrame.Angles(math.sin(t * 0.6) * 0.004, math.cos(t * 0.45) * 0.006, 0) or CFrame.identity
 			cam.CFrame = goal * sway
 		end
+		end)
+		if not okFrame then failSafe(errFrame) end
 	end)
 end
 
@@ -122,6 +136,7 @@ function TableCamera.Exit()
 		{ CFrame = back, FieldOfView = savedFov })
 	tw:Play()
 	tw.Completed:Once(restore)
+	task.delay(1.5, restore) -- Completed ไม่ยิง (respawn/ยกเลิก tween) กล้องต้องไม่ค้าง Scriptable
 end
 
 -- วงซัมมอน 3D บนโต๊ะเรืองแสงตอนลงการ์ด (ทำงานฝั่ง client เท่านั้น ผู้เล่นอื่นไม่เห็น)

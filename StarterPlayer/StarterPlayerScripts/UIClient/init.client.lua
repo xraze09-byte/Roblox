@@ -30,14 +30,21 @@ FloatHUD.Build(hud, overlay, {
 })
 WorldPrompts.Start(FloatHUD.Action)
 
+local matchToken = nil
 MatchUI.Build(match, overlay, {
 	OnStart = function()
 		FloatHUD.EnterMatch()
 		WorldPrompts.SetEnabled(false)
 		match.Enabled = false
-		TableCamera.Enter(function() match.Enabled = true end)
+		-- MatchUI ซ่อนไว้จนกล้องถึงโต๊ะ แต่ถ้ากล้องพัง/ไม่ถึง (โต๊ะหาย, error) ต้องไม่ปล่อยให้ผู้เล่นเห็นแต่โต๊ะ: เปิดเองภายใน 4 วิ
+		local token = {}
+		matchToken = token
+		local function showMatch() if matchToken == token then match.Enabled = true end end
+		task.delay(4, showMatch)
+		TableCamera.Enter(showMatch)
 	end,
 	OnExit = function()
+		matchToken = nil
 		TableCamera.Exit()
 		match.Enabled = true
 		FloatHUD.ExitMatch()

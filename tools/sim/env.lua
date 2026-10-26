@@ -56,7 +56,7 @@ local Random = { new = function(seed)
 		NextInteger = function(_, lo, hi) return lo + math.floor(nxt() * (hi - lo + 1)) end }
 end }
 local CFMt = {}
-local function cf(x,y,z) return setmetatable({ Position = { X = x or 0, Y = y or 0, Z = z or 0 }, X = x or 0, Y = y or 0, Z = z or 0 }, CFMt) end
+local function cf(x,y,z) return setmetatable({ Position = Vector3.new(x or 0, y or 0, z or 0), X = x or 0, Y = y or 0, Z = z or 0 }, CFMt) end
 CFMt.__index = function(t, k)
 	if k == "Rotation" then return t end
 	if k == "Lerp" then return function(a, b, al) return a end end

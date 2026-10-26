@@ -239,34 +239,7 @@ local function winBy(plr, mode, leader, riggedFn)
 	return last(plr, "MatchEnded")
 end
 
-scenario("forced WIN vs Bot: pays REWARD_WIN_BOT, counts stats + quests", function()
-	MOCK.pump(3)
-	local cfg = H.load(path("ReplicatedStorage/Shared/Config.lua"))
-	local g0 = call('GetProfile', A).Gems
-	local me = winBy(A, "Bot", "LEADER_LUNG")
-	print("      DEBUG ended payload:", me and table.concat({ tostring(me[2]), tostring(me[3]), tostring(me[5]) }, " | ") or "nil", "| queue Bot ok? gems g0=" .. g0)
-	if not me then bad("never ended") return end
-	if me[2] ~= true then bad("rigged win not a win: " .. tostring(me[3])) return end
-	MOCK.pump(1)
-	local g1 = call('GetProfile', A).Gems
-	if g1 - g0 ~= cfg.REWARD_WIN_BOT then bad(("bot win paid %d, expected %d"):format(g1 - g0, cfg.REWARD_WIN_BOT)) end
-	local st = call('GetStats', A)
-	if not st then bad("GetStats nil") end
-end)
-
-scenario("forced WIN in Tower: floor advances once, pays formula", function()
-	MOCK.pump(3)
-	local cfg = H.load(path("ReplicatedStorage/Shared/Config.lua"))
-	local pr0 = call('GetProfile', A)
-	local f0, g0 = pr0.TowerFloor, pr0.Gems
-	local me = winBy(A, "Tower", "LEADER_KID")
-	if not me or me[2] ~= true then bad("tower rigged win failed") return end
-	MOCK.pump(1)
-	local pr1 = call('GetProfile', A)
-	if pr1.TowerFloor ~= f0 + 1 then bad(("floor %d -> %d (expected +1)"):format(f0, pr1.TowerFloor)) end
-	local expect = cfg.TOWER_REWARD_BASE + f0 * cfg.TOWER_REWARD_PER_FLOOR
-	if pr1.Gems - g0 ~= expect then bad(("tower paid %d expected %d"):format(pr1.Gems - g0, expect)) end
-end)
+-- forced-win payout checks live in t_win_bot.lua / t_win_tower.lua (isolated, deterministic)
 
 scenario("PvP win: winner +REWARD_WIN_PVP(+bounty), loser +REWARD_LOSE_PVP, streak tracked", function()
 	local cfg = H.load(path("ReplicatedStorage/Shared/Config.lua"))
