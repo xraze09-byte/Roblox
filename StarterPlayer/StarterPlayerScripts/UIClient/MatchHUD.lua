@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIKit = require(Shared.UI.UIKit)
 local FX = require(Shared.UI.FX)
+local Perf = require(Shared.UI.Perf)
 local Config = require(Shared.Config)
 local okCD, CardData = pcall(require, Shared.CardData)
 
@@ -124,9 +125,13 @@ local function buildPoints(self)
 	self.shieldHint.Visible = false
 
 	-- เกจกระเพื่อมเหมือนเยลลี่
-	local t0 = os.clock()
-	table.insert(self.conns, RunService.Heartbeat:Connect(function()
-		if not UIKit.effectsOn() then return end
+	local t0, acc = os.clock(), 0
+	table.insert(self.conns, RunService.Heartbeat:Connect(function(dt)
+		local hz = Perf.get("hudHz")
+		if hz <= 0 or not UIKit.effectsOn() then return end
+		acc += dt
+		if acc < 1 / hz then return end
+		acc = 0
 		local t = os.clock() - t0
 		for i, c in ipairs(self.cells) do c.grad.Offset = Vector2.new(0, math.sin(t * 4 + i) * 0.15) end
 	end))

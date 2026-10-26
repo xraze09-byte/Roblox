@@ -107,7 +107,7 @@ RunService.RenderStepped:Connect(function()
 	local a = active
 	if not a then return end
 	if a.isMouse and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-		finish(true) -- กันกรณีพลาด InputEnded (เช่นปล่อยเมาส์นอกหน้าต่าง)
+		finish(false) -- เดิม finish(true): ปล่อยเมาส์นอกหน้าต่างแล้วการ์ดถูกเล่นเองโดยไม่ตั้งใจ
 		return
 	end
 	if not a.dragging then
