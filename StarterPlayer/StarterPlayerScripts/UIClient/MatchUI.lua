@@ -180,8 +180,8 @@ function MatchUI.Build(gui, overlay, cb)
 	local render, act -- forward
 
 	-- ───── โครง ─────
-	local root = new("Frame", { Name = "MatchRoot", Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Bg, Visible = false }, gui)
-	new("UIGradient", { Rotation = 90, Color = ColorSequence.new(rgb(255, 245, 215), rgb(255, 222, 170)) }, root)
+	-- โปร่งใส: ให้เห็นโต๊ะ 3D (CardTable) ที่กล้องแพนไปหา ไม่มีพื้นหลังทึบ/กราเดียนต์บังฉาก
+	local root = new("Frame", { Name = "MatchRoot", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false }, gui)
 	local bgBtn = new("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, root)
 
 	local function zone(color, pos, title)
