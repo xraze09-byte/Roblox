@@ -18,3 +18,6 @@ UI tests (run the same way, e.g. `python3 build.py t_matchui.lua && luau bundle.
 - `t_matchui_sizes.lua` MatchUI v2 layout overlap/off-screen check.
 
 Balance note (t_sim, 500 games): after the combat/turn rule changes first player wins ~46% (231/500) instead of ~50% (249/500); the second-player compensation in Config may now be slightly too strong.
+- `t_lobby.lua` (rewritten for Lobby v2) top bar / left nav / content window never overlap or leave the screen across 8 viewport sizes.
+- `t_lobby_v2.lua` Lobby v2 behavior: every tab renders, stats translated, quest badge, PvP queue timer + cancel, tower button, ProfileChanged floor update, profile retry.
+- `t_tower.lua` tower server logic on a real Match: boss shield/buff per floor, full match plays out, reward formula, floor progression, DataService persists TowerFloor.

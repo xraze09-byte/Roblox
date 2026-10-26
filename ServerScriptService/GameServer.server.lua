@@ -103,6 +103,7 @@ local function snapshot(player)
 	return {
 		Gems = data.Gems, Collection = table.clone(data.Collection), Deck = table.clone(data.Deck),
 		Pity = table.clone(data.Pity), Quests = QuestService.View(data),
+		TowerFloor = data.TowerFloor or 1,
 	}
 end
 
@@ -191,6 +192,17 @@ local function onMatchEnded(m, winner, reason)
 		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_PVP + bounty)
 		rewards[loser] = DataService.AddGems(loser, Config.REWARD_LOSE_PVP)
 		if bounty > 0 then m:Notify(("ล้มคนติดค่าหัวได้ โบนัส %d เพชร"):format(bounty), "Yellow") end
+	elseif m.Mode == "Tower" then
+		if typeof(winner) == "Instance" then
+			local floor = m.TowerFloor or 1
+			rewards[winner] = DataService.AddGems(winner, Config.TOWER_REWARD_BASE + floor * Config.TOWER_REWARD_PER_FLOOR)
+			local data = DataService.GetData(winner)
+			if data and (data.TowerFloor or 1) <= floor then
+				data.TowerFloor = math.min(floor + 1, Config.TOWER_MAX_FLOOR + 1)
+				DataService.Touch(winner)
+			end
+			m:Notify(("🗼 พิชิตชั้น %d สำเร็จ!"):format(floor), "Yellow")
+		end
 	elseif typeof(winner) == "Instance" then
 		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_BOT)
 	end
@@ -209,7 +221,7 @@ local function onMatchEnded(m, winner, reason)
 	return rewards
 end
 
-local function startMatch(p1, leader1, p2, leader2, mode)
+local function startMatch(p1, leader1, p2, leader2, mode, setup)
 	local ok, m = pcall(Match.new, p1, p2, deckFor(p1), deckFor(p2), leader1, leader2)
 	if not ok then
 		warn("[GameServer] สร้างแมตช์ไม่สำเร็จ: " .. tostring(m))
@@ -218,6 +230,10 @@ local function startMatch(p1, leader1, p2, leader2, mode)
 	m.Mode = mode
 	m.OnEnded = onMatchEnded
 	m.GetData = DataService.GetData
+	if setup then -- ตั้งค่าเพิ่มก่อนเริ่ม (เช่นบัฟบอสหอคอย) ต้องทำก่อน m:Start เพราะ Start จั่วการ์ด
+		local okSetup, setupErr = pcall(setup, m)
+		if not okSetup then warn("[GameServer] ตั้งค่าแมตช์ไม่สำเร็จ: " .. tostring(setupErr)) end
+	end
 	for _, p in m.players do
 		if typeof(p) == "Instance" then
 			ActiveMatches[p] = m
@@ -255,9 +271,34 @@ local function queueImpl(player, mode, leaderId)
 		return true, "CANCELLED"
 	end
 	if ActiveMatches[player] then return false, "IN_MATCH" end
-	if mode ~= "Bot" and mode ~= "PvP" then return false, "BAD_MODE" end
+	if mode ~= "Bot" and mode ~= "PvP" and mode ~= "Tower" then return false, "BAD_MODE" end
 	if not isLeader(leaderId) then return false, "BAD_LEADER" end
 	if not DataService.IsLoaded(player) then return false, "DATA_LOADING" end
+
+	if mode == "Tower" then
+		if waiting and waiting.player == player then waiting = nil end
+		local data = DataService.GetData(player)
+		local floor = math.clamp(tonumber(data and data.TowerFloor) or 1, 1, Config.TOWER_MAX_FLOOR)
+		local bot = { Name = ("🗼 บอสชั้น %d"):format(floor), IsBot = true }
+		local botLeader = Decks.Leaders[(floor - 1) % #Decks.Leaders + 1]
+		local ok = startMatch(player, leaderId, bot, botLeader, "Tower", function(m)
+			m.TowerFloor = floor
+			local side = m.sides[bot]
+			side.shield += (floor - 1) * Config.TOWER_SHIELD_PER_FLOOR
+			local buff = math.floor((floor - 1) / Config.TOWER_BUFF_EVERY)
+			if buff > 0 then
+				for _, c in side.deck do
+					if c.Type == "Character" then
+						c.ATK += buff
+						c.HP += buff
+						c.MaxHP = c.HP
+					end
+				end
+			end
+		end)
+		if not ok then return false, "SERVER_ERROR" end
+		return true, "STARTED"
+	end
 
 	if mode == "Bot" then
 		if waiting and waiting.player == player then waiting = nil end

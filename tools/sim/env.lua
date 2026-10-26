@@ -21,7 +21,9 @@ local UDim2 = {
 	fromOffset = function(x, y) return mk2(0, x, 0, y) end,
 }
 local function color(r,g,b) local c = {R=r,G=g,B=b}
-	function c:Lerp(o, a) return color(r+(o.R-r)*a, g+(o.G-g)*a, b+(o.B-b)*a) end return c end
+	function c:Lerp(o, a) return color(r+(o.R-r)*a, g+(o.G-g)*a, b+(o.B-b)*a) end
+	function c:ToHex() return string.format("%02X%02X%02X", math.floor(r*255+0.5), math.floor(g*255+0.5), math.floor(b*255+0.5)) end
+	return c end
 local Color3 = { new = function(r,g,b) return color(r or 0,g or 0,b or 0) end,
 	fromRGB = function(r,g,b) return color((r or 0)/255,(g or 0)/255,(b or 0)/255) end,
 	fromHSV = function(h,s,v) return color(v or 0,v or 0,v or 0) end,
@@ -57,7 +59,7 @@ local function svc(name, extra)
 	services[name] = s; return s
 end
 local Players = svc("Players")
-local lp = newInstance("Player"); lp.Name = "Tester"; lp.UserId = 1
+local lp = newInstance("Player"); lp.Name = "Tester"; lp.DisplayName = "Tester"; lp.UserId = 1
 local pg = newInstance("PlayerGui"); pg.Name = "PlayerGui"; pg.Parent = lp
 Players.LocalPlayer = lp
 Players.PlayerAdded = Signal(); Players.PlayerRemoving = Signal()

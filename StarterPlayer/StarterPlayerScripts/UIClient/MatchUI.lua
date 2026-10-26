@@ -943,6 +943,12 @@ function MatchUI.Build(gui, overlay, cb)
 		sel = nil
 		Net.fire("EndTurn")
 		render(false)
+		task.delay(2, function() -- เซิร์ฟเวอร์ไม่ตอบ (เช่นกดเร็วเกิน) -> ปลดล็อกปุ่ม
+			if endPending then
+				endPending = false
+				if state then render(false) end
+			end
+		end)
 	end)
 	local surrArmed = false
 	surrBtn.Activated:Connect(function()
