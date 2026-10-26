@@ -7,6 +7,7 @@ local UIKit = require(UIFolder:WaitForChild("UIKit"))
 local S = require(UIFolder:WaitForChild("Style"))
 local LobbyUI = require(script:WaitForChild("LobbyUI"))
 local MatchUI = require(script:WaitForChild("MatchUI"))
+local TableCamera = require(script:WaitForChild("TableCamera"))
 
 local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end)
@@ -27,8 +28,12 @@ MatchUI.Build(match, overlay, {
 	OnStart = function()
 		hud.Enabled = false
 		LobbyUI.ResetQueue()
+		match.Enabled = false                                   -- ซ่อน UI แมตช์ระหว่างกล้องบิน
+		TableCamera.Enter(function() match.Enabled = true end)  -- ถึงโต๊ะแล้วค่อยเปิด
 	end,
 	OnExit = function()
+		TableCamera.Exit()
+		match.Enabled = true
 		hud.Enabled = true
 		LobbyUI.Refresh()
 	end,
