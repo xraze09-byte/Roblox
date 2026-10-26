@@ -16,13 +16,24 @@ local function getTable()
 	return workspace:FindFirstChild("CardTable") or workspace:WaitForChild("CardTable", 5)
 end
 
-local function setControls(on)
-	local ok, pm = pcall(function()
-		return require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+-- PlayerModule อาจไม่มี/โหลดช้า (WaitForChild ไม่ใส่ timeout = ค้างตลอดกาล แล้วกล้องไม่เคยไปที่โต๊ะ) → ใส่ timeout และห้ามบล็อกการเข้าแมตช์
+local cachedControls = nil
+local function getControls()
+	if cachedControls then return cachedControls end
+	local ok, c = pcall(function()
+		local scripts = Players.LocalPlayer:WaitForChild("PlayerScripts", 3)
+		local pmInst = scripts and scripts:WaitForChild("PlayerModule", 3)
+		if not pmInst then return nil end
+		return require(pmInst):GetControls()
 	end)
-	if not ok or not pm then return end
-	local c = pm:GetControls()
-	if on then c:Enable() else c:Disable() end
+	if ok and c then cachedControls = c end
+	return cachedControls
+end
+
+local function setControls(on)
+	local c = getControls()
+	if not c then return end
+	pcall(function() if on then c:Enable() else c:Disable() end end)
 end
 
 
