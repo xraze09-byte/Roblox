@@ -66,7 +66,11 @@ function UIKit.getScale(gui)
 end
 
 -- jitter = สุ่ม pitch ±% ให้เสียงไม่ซ้ำซาก
+local sfxLast = {}
 function UIKit.sfx(name, jitter)
+	local now = os.clock()
+	if sfxLast[name] and now - sfxLast[name] < 0.04 then return end -- กันสร้าง Sound ซ้อนตอนชี้การ์ดรัวๆ
+	sfxLast[name] = now
 	local folder = SoundService:FindFirstChild("SFX")
 	local src = folder and folder:FindFirstChild(name)
 	local vol = tonumber(setting("Sfx", 1)) or 1
@@ -244,19 +248,25 @@ function UIKit.setDisabled(btn, disabled)
 	if lbl then lbl.TextTransparency = disabled and 0.35 or 0 end
 end
 
+-- บั๊กเดิม: ถ้าการ์ดหลุด parent ระหว่างสั่น ตำแหน่งจะเบี้ยวค้างและสั่นอีกไม่ได้
+--           และตอนจบจะดีดกลับตำแหน่งเก่า ทับทวีนที่กำลังเลื่อนการ์ด
 function UIKit.shake(gui, power)
-	if gui:GetAttribute("Shaking") then return end
+	if not gui or gui:GetAttribute("Shaking") then return end
 	gui:SetAttribute("Shaking", true)
 	local origin, rot, k = gui.Position, gui.Rotation, power or 7
+	local lastPos, lastRot = origin, rot
 	task.spawn(function()
 		for i = 1, 7 do
-			if not gui.Parent then return end
+			if not gui.Parent then break end
+			if gui.Position ~= lastPos or math.abs(gui.Rotation - lastRot) > 0.05 then break end -- มีทวีนอื่นขยับอยู่
 			local f = k * (1 - i / 8)
-			gui.Position = origin + UDim2.fromOffset((math.random() * 2 - 1) * f, (math.random() * 2 - 1) * f * 0.5)
-			gui.Rotation = rot + (math.random() * 2 - 1) * f * 0.6
+			lastPos = origin + UDim2.fromOffset(math.round((math.random() * 2 - 1) * f), math.round((math.random() * 2 - 1) * f * 0.5))
+			lastRot = rot + (math.random() * 2 - 1) * f * 0.6
+			gui.Position, gui.Rotation = lastPos, lastRot
 			task.wait(0.03)
 		end
-		gui.Position, gui.Rotation = origin, rot
+		if gui.Position == lastPos then gui.Position = origin end
+		if math.abs(gui.Rotation - lastRot) <= 0.05 then gui.Rotation = rot end
 		gui:SetAttribute("Shaking", nil)
 	end)
 end

@@ -8,6 +8,7 @@ local S = require(Shared:WaitForChild("UI"):WaitForChild("Style"))
 local Net = require(script.Parent:WaitForChild("Net"))
 local CardFace = require(script.Parent:WaitForChild("CardFace"))
 local Drag = require(script.Parent:WaitForChild("DragController"))
+local Perf = require(Shared:WaitForChild("UI"):WaitForChild("Perf"))
 local Inspect = require(script.Parent:WaitForChild("Inspect"))
 
 -- โมดูลหน้าตาใหม่ โหลดแบบ pcall: ถ้าไฟล์ใดพัง แมตช์ยังเล่นได้ด้วย UI เดิม
@@ -178,6 +179,8 @@ function MatchUI.Build(gui, overlay, cb)
 	local oldHud = { ui.endBtn, pts, ui.turn, timerBack, ui.timerText, ui.me.HpFill.Parent, ui.me.Shield, ui.opp.HpFill.Parent, ui.opp.Shield }
 
 	local function teardownHud()
+		Drag.Cancel() -- กันการ์ดที่ลากค้างทำงานหลังจบแมตช์
+		Perf.SetMatch(false) -- นอกแมตช์กลับไปกราฟิกเต็ม
 		for _, c in myCircles do pcall(c.Destroy, c) end
 		for _, c in oppCircles do pcall(c.Destroy, c) end
 		myCircles, oppCircles, prevState = {}, {}, nil
@@ -290,25 +293,25 @@ function MatchUI.Build(gui, overlay, cb)
 		return t
 	end
 
+	-- บั๊กเดิม: state ใหม่มาระหว่างลากการ์ด จะลบไฟเป้าหมายทิ้ง และแต้มสีแดงค้างตอนเทิร์นศัตรู
+	local KEEP = { hover = true, selected = true, target = true }
 	applyGlows = function()
-		if not state or not state.isMyTurn then
-			for _, v in views.hand do v:SetGlow("none") end
-			for _, v in views.myField do v:SetGlow("none") end
-			return
-		end
-		local pts = state.myPoints or 0
-		for _, c in state.myHand do
+		local myTurn = state and state.isMyTurn
+		local pts = (state and state.myPoints) or 0
+		local dragging = Drag.IsDragging()
+		for _, c in (state and state.myHand) or {} do
 			local v = views.hand[c.Uid]
 			if v then
-				local afford = (c.Cost or 0) <= pts
-				v:SetGlow(afford and "playable" or "none")
-				v:SetCostWarning(not afford)
+				local afford = myTurn and (c.Cost or 0) <= pts
+				if not (dragging and KEEP[v.Glow]) then v:SetGlow(afford and "playable" or "none") end
+				v:SetCostWarning(myTurn and not afford)
 			end
 		end
-		for _, c in state.myField do
+		for _, c in (state and state.myField) or {} do
 			local v = views.myField[c.Uid]
 			if v then
-				v:SetGlow(c.CanAttack and "ready" or "none")
+				local ready = myTurn and c.CanAttack
+				if not (dragging and KEEP[v.Glow]) then v:SetGlow(ready and "ready" or "none") end
 			end
 		end
 	end
@@ -427,6 +430,7 @@ function MatchUI.Build(gui, overlay, cb)
 
 	local function render(s)
 		state = s
+		Perf.SetMatch(true)
 		local isNewMatch = matchId == nil
 		matchId = s.matchId
 		root.Visible = true
@@ -519,10 +523,12 @@ function MatchUI.Build(gui, overlay, cb)
 		S.toast(text, color == "Red" and "bad" or (color == "Green" and "good" or "info"))
 	end)
 
+	local lastSec = -1
 	RunService.RenderStepped:Connect(function(dt)
 		if not state or ended then return end
 		local rem = math.max(0, (state.turnEndsAt or 0) - workspace:GetServerTimeNow())
-		ui.timerText.Text = math.ceil(rem)
+		local sec = math.ceil(rem)
+		if sec ~= lastSec then lastSec = sec; ui.timerText.Text = tostring(sec) end
 		ui.timerFill.Size = UDim2.fromScale(math.clamp(rem / Config.TURN_TIME, 0, 1), 1)
 	end)
 end

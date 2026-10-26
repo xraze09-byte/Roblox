@@ -2,6 +2,7 @@
 local Theme = require(script.Parent.Theme)
 local UIKit = require(script.Parent.UIKit)
 local Settings = require(script.Parent.Settings)
+local Perf = require(script.Parent:WaitForChild("Perf"))
 local TweenService = game:GetService("TweenService")
 local function Inspector() return require(script.Parent.CardInspector) end -- require ตอนใช้ เลี่ยง require วนกัน
 
@@ -125,7 +126,7 @@ function CardView.new(card, opts)
 		Text = "", Size = UDim2.fromScale(0.95, 0.24), Position = UDim2.fromScale(0.5, 0.98),
 		AnchorPoint = Vector2.new(0.5, 1), Parent = self.Art, StrokeThickness = 1,
 	})
-	if SHINY[card.Rarity] then addShine(self.Art, SHINY[card.Rarity]) end
+	if SHINY[card.Rarity] and Perf.allowShine(card.Rarity) then addShine(self.Art, SHINY[card.Rarity]) end
 
 	UIKit.label({
 		Text = card.Name or "???", Color = Theme.Color.Outline, StrokeThickness = 0,
@@ -207,7 +208,7 @@ end
 function CardView:Hit(damage)
 	UIKit.sfx("Hit")
 	UIKit.popup(self.Frame, "-" .. damage)
-	if not UIKit.Settings.VFX then return end
+	if not UIKit.effectsOn() then return end
 	if typeof(self.Card.HitArt) == "string" then -- ถ้ามีภาพหน้าโดนตี ให้สลับภาพชั่วคราว
 		self.Art.Image = self.Card.HitArt
 		task.delay(0.7, function()
@@ -216,7 +217,7 @@ function CardView:Hit(damage)
 	end
 	UIKit.jelly(self.Art, -0.4) -- ภาพยืดเบี้ยว
 	UIKit.jelly(self.Body, 0.35)
-	UIKit.shake(self.Body)
+	if Perf.get("shake") then UIKit.shake(self.Body) end
 	self.Body.BackgroundColor3 = Theme.Color.Red
 	UIKit.tween(self.Body, 0.4, { BackgroundColor3 = self.BaseBg })
 end
@@ -236,12 +237,14 @@ local DEATH_STYLES = {
 }
 
 function CardView:Die()
+	if self.Dead then return end -- กันเรียกซ้ำ
+	self.Dead = true
 	if self.Shadow then self.Shadow.Visible = false end
 	UIKit.sfx("Death")
-	if UIKit.Settings.VFX then
-		DEATH_STYLES[math.random(#DEATH_STYLES)](self)
-	end
-	task.delay(0.6, function() self.Frame:Destroy() end)
+	local mode = UIKit.effectsOn() and Perf.get("death") or "none"
+	if mode == "full" then DEATH_STYLES[math.random(#DEATH_STYLES)](self)
+	elseif mode == "simple" then DEATH_STYLES[1](self) end
+	task.delay(mode == "none" and 0 or 0.6, function() self.Frame:Destroy() end)
 end
 
 function CardView:Remove()
@@ -253,20 +256,32 @@ function CardView:PopIn()
 	UIKit.tween(self.Body, 0.35, { Size = UDim2.fromScale(1, 1) }, Enum.EasingStyle.Back)
 end
 
+-- บั๊กเดิม: Lunge ดึงการ์ดที่เลือกอยู่กลับไปตำแหน่งปกติ, SetTarget(false) ลบขอบเหลืองของการ์ดที่เลือก
+function CardView:_paintStroke()
+	if self.Targeted then
+		self.Stroke.Color, self.Stroke.Thickness = Theme.Color.Red, 6
+	elseif self.Selected then
+		self.Stroke.Color, self.Stroke.Thickness = Theme.Color.Yellow, 6
+	else
+		self.Stroke.Color, self.Stroke.Thickness = self.RarityColor, 4
+	end
+end
+function CardView:_rest() return UDim2.fromScale(0.5, self.Selected and 0.42 or 0.5) end
+
 function CardView:SetSelected(on)
-	self.Stroke.Color = on and Theme.Color.Yellow or self.RarityColor
-	self.Stroke.Thickness = on and 6 or 4
-	UIKit.tween(self.Body, 0.15, { Position = UDim2.fromScale(0.5, on and 0.42 or 0.5) })
+	self.Selected = on and true or false
+	self:_paintStroke()
+	UIKit.tween(self.Body, 0.15, { Position = self:_rest() })
 end
 
 function CardView:SetTarget(on)
-	self.Stroke.Color = on and Theme.Color.Red or self.RarityColor
-	self.Stroke.Thickness = on and 6 or 4
+	self.Targeted = on and true or false
+	self:_paintStroke()
 end
 
 function CardView:Lunge()
 	UIKit.tween(self.Body, 0.12, { Position = UDim2.fromScale(0.5, 0.2) }).Completed:Once(function()
-		UIKit.tween(self.Body, 0.25, { Position = UDim2.fromScale(0.5, 0.5) }, Enum.EasingStyle.Back)
+		if self.Body.Parent then UIKit.tween(self.Body, 0.25, { Position = self:_rest() }, Enum.EasingStyle.Back) end
 	end)
 end
 

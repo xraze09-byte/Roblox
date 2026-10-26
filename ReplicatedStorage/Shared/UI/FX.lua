@@ -4,21 +4,36 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
 local UIKit = require(script.Parent.UIKit)
+local Perf = require(script.Parent:WaitForChild("Perf"))
 local Theme = UIKit.Theme
 local C, CENTER = Theme.Color, UIKit.CENTER
 local FX = {}
 
--- ตัวหมุนรวม: RenderStepped เส้นเดียวทั้งเกม
-local spinners, spinConn = {}, nil
+-- ตัวหมุนรวม: RenderStepped เส้นเดียวทั้งเกม ลดความถี่ตามระดับกราฟิก + ข้ามตัวที่มองไม่เห็น
+local spinners, spinConn, spinAcc = {}, nil, 0
 function FX.spin(inst, degPerSec)
 	spinners[inst] = degPerSec or 90
 	if not spinConn then
 		spinConn = RunService.RenderStepped:Connect(function(dt)
+			local hz = Perf.get("spinHz")
+			spinAcc += dt
+			if spinAcc < 1 / (hz > 0 and hz or 1) then return end -- Low: ไม่หมุน แต่ยังเก็บกวาดทุก 1 วิ
+			local step = spinAcc
+			spinAcc = 0
 			local any = false
 			for i, sp in pairs(spinners) do
-				if i.Parent then any = true; i.Rotation = (i.Rotation + sp * dt) % 360 else spinners[i] = nil end
+				local p = i.Parent
+				if p then
+					any = true
+					if hz > 0 then
+						local host = p:IsA("GuiObject") and p or (p.Parent and p.Parent:IsA("GuiObject") and p.Parent)
+						if not host or host.Visible then i.Rotation = (i.Rotation + sp * step) % 360 end
+					end
+				else
+					spinners[i] = nil
+				end
 			end
-			if not any then spinConn:Disconnect(); spinConn = nil end
+			if not any then spinConn:Disconnect(); spinConn = nil; spinAcc = 0 end
 		end)
 	end
 	return function() spinners[inst] = nil end
@@ -31,8 +46,10 @@ end
 
 function FX.sparkles(parent, color, count, origin)
 	if not parent or not UIKit.effectsOn() then return end
+	count = Perf.count(count or 12)
+	if count <= 0 then return end
 	origin = origin or Vector2.new(0.5, 0.5)
-	for i = 1, count or 12 do
+	for i = 1, count do
 		local sz = math.random(6, 16)
 		local d = diamond(parent, (i % 3 == 0) and C.White or (color or C.Yellow), UDim2.fromOffset(sz, sz))
 		d.Position = UDim2.fromScale(origin.X, origin.Y)
@@ -48,7 +65,7 @@ function FX.ambientSparkles(parent, color, every)
 	local alive = true
 	task.spawn(function()
 		while alive and parent.Parent do
-			if UIKit.effectsOn() then
+			if UIKit.effectsOn() and Perf.get("ambient") then
 				local sz = math.random(5, 12)
 				local d = diamond(parent, math.random() < 0.4 and C.White or color, UDim2.fromOffset(sz, sz), 30)
 				d.Position = UDim2.fromScale(math.random(), math.random())
@@ -123,11 +140,18 @@ function FX.rarityGlow(gui, rarity, opts)
 	local st = UIKit.new("UIStroke", { Thickness = 2 + tier, Color = C.White, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = ring })
 	local g = UIKit.new("UIGradient", { Color = Theme.RarityGlow[rarity] or Theme.RarityGlow.Rare, Parent = st })
 	if tier >= 3 then
-		FX.spin(g, 60 * tier)
-		TweenService:Create(st, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.45 }):Play()
+		ring.Destroying:Connect(FX.spin(g, 60 * tier))
+		if Perf.get("pulse") then
+			local tw = TweenService:Create(st, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.45 })
+			tw:Play()
+			ring.Destroying:Connect(function() tw:Cancel() end)
+		end
 	end
-	if tier >= 4 and opts.Sparkles ~= false then
+	if tier >= 4 and opts.Sparkles ~= false and Perf.get("ambient") then
 		ambient[gui] = FX.ambientSparkles(gui, Theme.Rarity[rarity], tier == 5 and 0.12 or 0.22)
+		ring.Destroying:Connect(function()
+			if ambient[gui] then ambient[gui](); ambient[gui] = nil end
+		end)
 	end
 	return ring
 end

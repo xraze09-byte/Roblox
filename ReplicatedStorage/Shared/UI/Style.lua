@@ -159,8 +159,18 @@ function Style.scroll(p)
 		layout = Style.new("UIListLayout", { Padding = UDim.new(0, p.Gap or 8), SortOrder = Enum.SortOrder.LayoutOrder })
 	end
 	layout.Parent = f
+	-- บั๊กเดิม: ถ้ามี UIScale อยู่ด้านบน AbsoluteContentSize จะถูกคูณสเกลไปแล้ว ทำให้เลื่อนเกิน/ไม่สุด
+	local function uiScaleOf(gui)
+		local sc, par = 1, gui
+		while par and not par:IsA("LayerCollector") do
+			local us = par:FindFirstChildOfClass("UIScale")
+			if us then sc *= us.Scale end
+			par = par.Parent
+		end
+		return math.max(sc, 0.01)
+	end
 	local function fit()
-		f.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + (p.Extra or 8))
+		f.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y / uiScaleOf(f) + (p.Extra or 8))
 	end
 	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fit)
 	fit()

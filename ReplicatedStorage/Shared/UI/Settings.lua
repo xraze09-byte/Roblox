@@ -1,5 +1,4 @@
 -- ReplicatedStorage/Shared/UI/Settings (ModuleScript)
--- เก็บค่าตั้งค่าฝั่งผู้เล่น ใช้ร่วมกันทุกเมนู
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 
@@ -10,11 +9,11 @@ local values = {
 	Effects = true,       -- แสงวิ้งบนการ์ด + ประกายพื้นหลัง
 	DamageNumbers = true,
 	TargetArrow = true,
+	Quality = "Auto",     -- ใหม่: "Auto" | "High" | "Balanced" | "Low"
 }
 local changed = Instance.new("BindableEvent")
 Settings.Changed = changed.Event
 
--- ปรับเสียงทุกไฟล์ใน SoundService.SFX (UIKit.sfx เล่นจากโฟลเดอร์นี้)
 local function applySfx(v)
 	local folder = SoundService:FindFirstChild("SFX")
 	if not folder then return end

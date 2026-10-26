@@ -23,7 +23,7 @@ M.Signal = Signal
 
 local SIGNALS = { Activated=1, MouseButton1Click=1, MouseButton1Down=1, MouseButton1Up=1, MouseButton2Click=1,
 	MouseEnter=1, MouseLeave=1, InputBegan=1, InputEnded=1, InputChanged=1, Changed=1, ChildAdded=1, ChildRemoved=1,
-	Destroying=1, AncestryChanged=1, TouchLongPress=1, FocusLost=1, Heartbeat=1, RenderStepped=1, Completed=1,
+	Destroying=1, AncestryChanged=1, TouchLongPress=1, FocusLost=1, Heartbeat=1, RenderStepped=1, Completed=1, Event=1,
 	OnClientEvent=1, OnServerEvent=1, PlayerAdded=1, PlayerRemoving=1, MouseMoved=1, TouchTap=1, TouchMoved=1, TouchEnded=1, TouchStarted=1, TouchPinch=1, TouchPan=1, WindowFocused=1, WindowFocusReleased=1,  MouseButton2Down=1, MouseButton2Up=1 }
 
 local ClassIs = {
@@ -80,6 +80,7 @@ local function newInstance(class)
 		if not sig then sig = Signal(); rawset(self, key, sig) end
 		return sig
 	end
+	function inst:Fire(...) self.Event:Fire(...) end -- BindableEvent
 	function inst:TweenSize() end function inst:TweenPosition() end
 	function inst:Play() end function inst:Stop() end function inst:Pause() end
 	inst._props.AbsoluteSize = {X=800,Y=600}; inst._props.AbsolutePosition = {X=0,Y=0}; inst._props.AbsoluteContentSize = {X=0,Y=0}
