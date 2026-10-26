@@ -16,6 +16,13 @@ return {
 	GATE_DISCOUNT = 1,
 	KEYWORD_COST = 2,
 
+	-- หอคอย (PvE)
+	TOWER_MAX_FLOOR = 30,
+	TOWER_SHIELD_PER_FLOOR = 2, -- บอสได้เกราะผู้นำเพิ่มชั้นละ 2
+	TOWER_BUFF_EVERY = 4,       -- ทุก 4 ชั้น ตัวละครบอส ATK/HP +1
+	TOWER_REWARD_BASE = 10,
+	TOWER_REWARD_PER_FLOOR = 5,
+
 	REWARD_WIN_PVP = 30,
 	REWARD_LOSE_PVP = 5,
 	REWARD_WIN_BOT = 10,

@@ -11,7 +11,7 @@ local DeckRules = require(Shared:WaitForChild("DeckRules"))
 local DEFAULT = {
 	Gems = 100, Wins = 0, Losses = 0, Streak = 0, BestStreak = 0,
 	Collection = {}, Deck = {}, Pity = { Epic = 0, Legend = 0 },
-	Quests = { Day = 0, List = {} }, Farms = {},
+	Quests = { Day = 0, List = {} }, Farms = {}, TowerFloor = 1,
 }
 local AUTOSAVE_INTERVAL = 120
 
