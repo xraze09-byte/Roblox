@@ -55,7 +55,7 @@ local pool = {}
 for _, r in ipairs({ gui, overlay, H.game:GetService("Players").LocalPlayer and H.game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui") }) do
 	if r then for _, d in ipairs(r:GetDescendants()) do table.insert(pool, d) end end
 end
-for _, d in ipairs(pool) do if d.ClassName == "TextButton" and tostring(d.Text):find("กลับล็อบบี้", 1, true) then back = d end end
+for _, d in ipairs(pool) do if d.ClassName == "TextButton" and tostring(d.Text):find("กลับไปเดินเล่น", 1, true) then back = d end end
 if not back then print("buttons seen:", #pool) end
 check("back button found", back ~= nil)
 if back then back.Activated:Fire() end

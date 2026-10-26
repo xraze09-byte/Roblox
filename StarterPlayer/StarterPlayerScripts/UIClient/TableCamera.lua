@@ -45,15 +45,18 @@ local function ease(t) return t < 0.5 and 4 * t ^ 3 or 1 - (-2 * t + 2) ^ 3 / 2 
 -- onArrived ถูกเรียกเมื่อกล้องถึงโต๊ะ (ใช้เปิด Battle UI)
 function TableCamera.Enter(onArrived)
 	if active then if onArrived then onArrived() end return end
+	session += 1
+	local my = session
+	active = true
 	local tbl = getTable()
+	if session ~= my then return end -- แมตช์จบระหว่างรอโต๊ะ: Exit คืนกล้องให้แล้ว
 	local point = tbl and tbl:FindFirstChild("CameraPoint", true)
 	if not point then
+		active = false
 		warn("[TableCamera] ไม่พบ workspace.CardTable.CameraPoint")
 		if onArrived then onArrived() end
 		return
 	end
-	session += 1
-	active = true
 	local cam = workspace.CurrentCamera
 	savedFov = cam.FieldOfView
 	setControls(false)
@@ -62,20 +65,20 @@ function TableCamera.Enter(onArrived)
 	local felt = tbl:FindFirstChild("Felt", true)
 	local goal = point.CFrame
 	local focus = felt and felt.Position or (goal * CFrame.new(0, 0, -20)).Position
-	if onFarSide() then
+	local far = onFarSide()
+	if session ~= my then return end -- แมตช์จบระหว่างรอที่นั่ง
+	if far then
 		local pivot = CFrame.new(focus)
 		goal = pivot * CFrame.Angles(0, math.pi, 0) * pivot:Inverse() * goal
-		farSide = true
-	else
-		farSide = false
 	end
+	farSide = far
 	local start, startFov = cam.CFrame, cam.FieldOfView
 	local mid = start.Position:Lerp(goal.Position, 0.5) + Vector3.new(0, 14, 0)
 	local t0, arrived = os.clock(), false
 
 	stop()
 	conn = RunService.RenderStepped:Connect(function()
-		if cam.CameraType ~= Enum.CameraType.Scriptable then cam.CameraType = Enum.CameraType.Scriptable end -- กันกรณีเกิดใหม่
+		if cam.CameraType ~= Enum.CameraType.Scriptable then cam.CameraType = Enum.CameraType.Scriptable end
 		local a = math.clamp((os.clock() - t0) / FLY_TIME, 0, 1)
 		if a < 1 then
 			local e = ease(a)

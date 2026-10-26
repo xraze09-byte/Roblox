@@ -1,19 +1,47 @@
+-- StarterPlayerScripts/UIClient/Net.lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local Net = {}
 local locks = {}
+local TIMEOUT = 15
 
-local function remote(name) return Remotes:WaitForChild(name, 10) end
+local function remote(name)
+	local r = Remotes:WaitForChild(name, 10)
+	if not r then warn("[Net] ไม่พบ Remote: " .. tostring(name)) end
+	return r
+end
 
--- ส่งได้ทีละคำสั่งต่อกลุ่ม: ถ้ายังไม่ตอบกลับ จะไม่ส่งซ้ำ
+-- InvokeServer แบบมีเวลาหมด: เซิร์ฟเวอร์ค้าง/หลุด ปุ่มจะไม่ล็อกตลอดไป
+local function invokeTimeout(r, ...)
+	local thread = coroutine.running()
+	local args = table.pack(...)
+	local done, waiting, result = false, false, nil
+	local function finish(res)
+		if done then return end
+		done, result = true, res
+		if waiting then task.spawn(thread, res) end
+	end
+	task.spawn(function()
+		finish(table.pack(pcall(r.InvokeServer, r, table.unpack(args, 1, args.n))))
+	end)
+	task.delay(TIMEOUT, finish, false)
+	if done then return result end
+	waiting = true
+	return coroutine.yield()
+end
+
 function Net.invokeLocked(lock, name, ...)
 	if locks[lock] then return false, "BUSY" end
 	local r = remote(name)
 	if not r then return false, "NET_ERROR" end
 	locks[lock] = true
-	local res = table.pack(pcall(r.InvokeServer, r, ...))
+	local res = invokeTimeout(r, ...)
 	locks[lock] = nil
+	if res == false then
+		warn("[Net] " .. name .. ": หมดเวลา")
+		return false, "TIMEOUT"
+	end
 	if not res[1] then
 		warn("[Net] " .. name .. ": " .. tostring(res[2]))
 		return false, "NET_ERROR"
@@ -34,7 +62,7 @@ function Net.on(name, fn)
 end
 
 Net.Errors = {
-	BUSY = "กำลังทำคำสั่งก่อนหน้า", SLOW_DOWN = "กดเร็วเกินไป รอสักครู่",
+	BUSY = "กำลังทำคำสั่งก่อนหน้า", SLOW_DOWN = "กดเร็วเกินไป รอสักครู่", TIMEOUT = "เซิร์ฟเวอร์ตอบช้า ลองใหม่อีกครั้ง",
 	NET_ERROR = "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", SERVER_ERROR = "เซิร์ฟเวอร์ขัดข้อง ลองอีกครั้ง",
 	NO_MATCH = "ไม่ได้อยู่ในแมตช์", MATCH_OVER = "แมตช์จบแล้ว", NOT_YOUR_TURN = "ยังไม่ถึงตาคุณ",
 	INVALID_CARD = "ใช้การ์ดใบนี้ไม่ได้", INVALID_TARGET = "เป้าหมายไม่ถูกต้อง",
@@ -48,6 +76,7 @@ Net.Errors = {
 }
 
 function Net.message(code)
+	if code == nil then return "ทำไม่ได้ ลองใหม่อีกครั้ง" end
 	if typeof(code) == "string" and code:find("[^%w_]") then return code end -- ข้อความไทยจากเซิร์ฟเวอร์
 	return Net.Errors[code] or ("ทำไม่ได้ (" .. tostring(code) .. ")")
 end

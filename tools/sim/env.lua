@@ -75,9 +75,16 @@ Players.PlayerAdded = Signal(); Players.PlayerRemoving = Signal()
 function Players:GetPlayers() return { lp } end
 local RS = svc("ReplicatedStorage")
 local SS = svc("ServerStorage")
-svc("TweenService", { Create = function(_, inst, _, props)
-	return { Play = function() for k, v in pairs(props or {}) do pcall(function() inst[k] = v end) end end, Cancel = function() end,
-		Completed = Signal(), Destroy = function() end } end })
+local taskLib -- กำหนดภายหลัง (ตัวจัดตารางเวลาประกาศท้ายไฟล์)
+svc("TweenService", { Create = function(_, inst, info, props)
+	local tw = { Cancel = function() end, Completed = Signal(), Destroy = function() end }
+	tw.Play = function()
+		for k, v in pairs(props or {}) do pcall(function() inst[k] = v end) end
+		-- ยิง Completed หลังเวลาของ TweenInfo ผ่านตัวจัดตารางเวลาของ mock (ใช้ทดสอบ Juice.popOut ฯลฯ)
+		local dur = type(info) == "table" and tonumber(info[1] or info.Time) or 0.2
+		if taskLib then taskLib.delay(dur, function() tw.Completed:Fire() end) end
+	end
+	return tw end })
 svc("SoundService"); svc("Debris", { AddItem = function() end })
 svc("RunService", { Heartbeat = Signal(), RenderStepped = Signal(), IsClient = function() return true end,
 	IsServer = function() return false end, IsStudio = function() return true end })
@@ -175,6 +182,7 @@ globalsBase.task = {
 	delay = function(t, f, ...) local a = {...}; local co = coroutine.create(f); table.insert(queue, { at = now + (t or 0), co = co, args = a }); return co end,
 	cancel = function(co) for i = #queue, 1, -1 do if queue[i].co == co then table.remove(queue, i) end end end,
 }
+taskLib = globalsBase.task
 globalsBase.wait = globalsBase.task.wait
 globalsBase.spawn = globalsBase.task.spawn
 function M.clock() return now end

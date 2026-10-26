@@ -6,6 +6,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
@@ -179,6 +180,9 @@ function MatchUI.Build(gui, overlay, cb)
 	local ended, endPending = false, false
 	local logLines = {}
 	local render, act -- forward
+	local myGateFrame = nil          -- ช่องเกตฝั่งเรา (ใช้หาตำแหน่งเอฟเฟกต์/ลากวาง)
+	local seenField = {}             -- การ์ดในสนามที่เคยเห็นแล้ว (ใบใหม่ = กระแทกลง)
+	local cancelDrag = function() end
 
 	-- ───── โครง ─────
 	-- โปร่งใส: ให้เห็นโต๊ะ 3D (CardTable) ที่กล้องแพนไปหา ไม่มีพื้นหลังทึบ/กราเดียนต์บังฉาก
@@ -186,7 +190,7 @@ function MatchUI.Build(gui, overlay, cb)
 	local bgBtn = new("TextButton", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, root)
 
 	local function zone(color, pos, title)
-		local z = new("Frame", { BackgroundColor3 = color, Position = pos, Size = UDim2.fromScale(0.71, 0.27) }, root)
+		local z = new("Frame", { BackgroundColor3 = color, BackgroundTransparency = 0.4, Position = pos, Size = UDim2.fromScale(0.71, 0.27) }, root)
 		corner(z, 18); outline(z, 4)
 		local t = text(z, { Text = title, Font = FONT, TextColor3 = C.White, Position = UDim2.fromScale(0.01, 0.01),
 			Size = UDim2.fromScale(0.2, 0.1), TextXAlignment = Enum.TextXAlignment.Left })
@@ -485,7 +489,7 @@ function MatchUI.Build(gui, overlay, cb)
 		end
 
 		f.Activated:Connect(function() if o.onClick then o.onClick() end end)
-		return { frame = f, art = art, hp = card.HP or 0 }
+		return { frame = f, art = art, hp = card.HP or 0, scale = sc }
 	end
 
 	-- ───── ตรรกะการเลือก ─────
@@ -548,23 +552,131 @@ function MatchUI.Build(gui, overlay, cb)
 		return t
 	end
 
-	act = function(key)
+	-- ───── หาตำแหน่งเป้าหมายบนจอ ─────
+	local function centerOf(g)
+		if g and g.Parent then return g.AbsolutePosition + g.AbsoluteSize / 2 end
+		return nil
+	end
+	local function inside(g, p)
+		if not g or not g.Parent then return false end
+		local a, s = g.AbsolutePosition, g.AbsoluteSize
+		return p.X >= a.X and p.X <= a.X + s.X and p.Y >= a.Y and p.Y <= a.Y + s.Y
+	end
+	local function targetCenter(key)
+		if key == "Field" then return centerOf(myRow) end
+		if key == "Gate" then return centerOf(myGateFrame) end
+		if key == "LEADER" then return centerOf(oppL.btn) end
+		if key == "MY_LEADER" then return centerOf(myL.btn) end
+		if key == "NOW" then return centerOf(mid) end
+		local v = fieldViews[key]
+		return v and centerOf(v.frame) or nil
+	end
+	local function keyAt(p)
+		for key in targets do
+			local v = fieldViews[key]
+			if v and inside(v.frame, p) then return key end
+		end
+		if targets.Gate and inside(myGateFrame, p) then return "Gate" end
+		if targets.LEADER and inside(oppL.btn, p) then return "LEADER" end
+		if targets.MY_LEADER and inside(myL.btn, p) then return "MY_LEADER" end
+		if targets.Field and inside(myRow.Parent, p) then return "Field" end
+		if targets.NOW and p.Y < hand.AbsolutePosition.Y - 8 then return "NOW" end
+		return nil
+	end
+
+	act = function(key, dropPos)
 		if not sel or ended then return end
 		local cur = sel
+		local at = dropPos or targetCenter(key) -- จำตำแหน่งก่อน render สร้างการ์ดใหม่
 		sel = nil
 		render(false)
 		local ok, err
 		if cur.kind == "attacker" then
 			ok, err = Net.invoke("Attack", cur.uid, key)
+			if ok and Juice and at then Juice.burstAt(gui, at, "ตุ้บ!!", C.Red) end
 		else
 			ok, err = Net.invoke("PlayCard", cur.uid, key ~= "NOW" and key or nil)
-			-- ลงการ์ดสำเร็จ: ระเบิดเอฟเฟกต์กลางสนามฝั่งเรา (วางไว้ใน ScreenGui จึงไม่หายตอน render ใหม่)
-			if ok and Juice and myRow and myRow.Parent then
-				Juice.burstOn(myRow, "ปั้ง!!", Color3.fromRGB(150, 255, 90))
+			if ok and Juice and at then
+				if key == "Gate" then Juice.burstAt(gui, at, "🎲 ลงเกต!", C.Pink)
+				elseif key == "Field" then Juice.burstAt(gui, at, "ปั้ง!!", C.Lime)
+				else Juice.burstAt(gui, at, "✨ ฟิ้ว!", C.Yellow) end
 			end
 		end
-		if not ok then toast(errMsg(err), C.Red) end
+		if not ok then
+			toast(errMsg(err), C.Red)
+			local v = cur.kind == "attacker" and fieldViews[cur.uid]
+			wobble(v and v.frame or hand)
+		end
 	end
+
+	-- ───── ลากการ์ดจากมือลงสนาม (แตะ-แตะแบบเดิมยังใช้ได้) ─────
+	local DRAG_START = 12
+	local press, drag = nil, nil
+
+	cancelDrag = function()
+		if drag and drag.ghost then drag.ghost:Destroy() end
+		drag, press = nil, nil
+	end
+
+	local function startDrag(p)
+		local c = press.card
+		sel = { kind = "hand", uid = c.Uid }
+		inspect(c)
+		render(false)
+		if not sel then press = nil return end
+		local v = buildCard(fx, c, { showCost = true, selected = true })
+		v.frame.AnchorPoint = Vector2.new(0.5, 0.5)
+		v.frame.Size = UDim2.fromOffset(press.size.X * 1.15, press.size.Y * 1.15)
+		drag = { ghost = v.frame, scale = v.scale, uid = c.Uid, lastX = p.X, tilt = 0, over = false }
+	end
+
+	local function pressHand(c, frame, inp)
+		if drag or ended or not state or not state.isMyTurn then return end
+		local t = inp.UserInputType
+		if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+		press = { card = c, input = inp, start = Vector2.new(inp.Position.X, inp.Position.Y), size = frame.AbsoluteSize }
+	end
+
+	local function samePointer(inp, moving)
+		if not press then return false end
+		if press.input.UserInputType == Enum.UserInputType.MouseButton1 then
+			return inp.UserInputType == (moving and Enum.UserInputType.MouseMovement or Enum.UserInputType.MouseButton1)
+		end
+		return inp == press.input
+	end
+
+	UserInputService.InputChanged:Connect(function(inp)
+		if not samePointer(inp, true) then return end
+		local p = Vector2.new(inp.Position.X, inp.Position.Y)
+		if not drag then
+			if (p - press.start).Magnitude < DRAG_START then return end
+			startDrag(p)
+			if not drag then return end
+		end
+		if not sel or sel.uid ~= drag.uid then cancelDrag() return end
+		local base = fx.AbsolutePosition
+		drag.ghost.Position = UDim2.fromOffset(p.X - base.X, p.Y - base.Y)
+		drag.tilt += ((p.X - drag.lastX) * 1.2 - drag.tilt) * 0.35
+		drag.lastX = p.X
+		drag.ghost.Rotation = math.clamp(drag.tilt, -20, 20)
+		local over = keyAt(p) ~= nil
+		if over ~= drag.over then
+			drag.over = over
+			tween(drag.scale, 0.12, { Scale = over and 1.25 or 1.08 }, Enum.EasingStyle.Back)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(inp)
+		if not samePointer(inp, false) then return end
+		local d = drag
+		if not d then press = nil return end -- แค่แตะ ไม่ได้ลาก → ให้ Activated เดิมทำงาน
+		local p = Vector2.new(inp.Position.X, inp.Position.Y)
+		local key = keyAt(p)
+		cancelDrag()
+		if key and sel and sel.kind == "hand" and sel.uid == d.uid then
+			act(key, p)
+		end -- ปล่อยนอกเป้า: การ์ดยังถูกเลือกค้างไว้ แตะเป้าหมายต่อได้
+	end)
 
 	local function onFieldClick(c, mine)
 		if targets[c.Uid] then act(c.Uid) return end
@@ -643,6 +755,7 @@ function MatchUI.Build(gui, overlay, cb)
 		local s = state
 		local g = new("TextButton", { AutoButtonColor = false, Text = "", BackgroundColor3 = rgb(70, 30, 120),
 			Size = UDim2.fromScale(1, 1), LayoutOrder = 10 }, row)
+		if mine then myGateFrame = g end
 		new("UIAspectRatioConstraint", { AspectRatio = CARD_RATIO }, g)
 		corner(g, 12)
 		local st = outline(g, 4)
@@ -679,11 +792,17 @@ function MatchUI.Build(gui, overlay, cb)
 			local c = list[i]
 			if c then
 				local ready = mine and s.isMyTurn and not ended and c.CanAttack and (c.ATK or 0) > 0 and not c.Frozen
-				fieldViews[c.Uid] = buildCard(row, c, {
+				local v = buildCard(row, c, {
 					order = i, target = targets[c.Uid], ready = ready,
 					selected = sel ~= nil and sel.kind == "attacker" and sel.uid == c.Uid,
 					onClick = function() onFieldClick(c, mine) end,
 				})
+				fieldViews[c.Uid] = v
+				if not seenField[c.Uid] then -- เพิ่งลงสนาม → กระแทกลงมา
+					seenField[c.Uid] = true
+					v.scale.Scale = 1.6
+					tween(v.scale, 0.45, { Scale = 1 }, Enum.EasingStyle.Bounce)
+				end
 			else
 				emptySlot(row, i, mine, gateFilled and i == Config.FIELD_SLOTS)
 			end
@@ -697,13 +816,17 @@ function MatchUI.Build(gui, overlay, cb)
 		local s = state
 		for i, c in s.myHand do
 			local can = canPlay(c)
-			buildCard(hand, c, {
+			local v = buildCard(hand, c, {
 				order = i, showCost = true,
 				dim = s.isMyTurn and not ended and not can,
 				playable = s.isMyTurn and can,
 				selected = sel ~= nil and sel.kind == "hand" and sel.uid == c.Uid,
 				onClick = function() onHandClick(c) end,
 			})
+			if can and s.isMyTurn and not ended then
+				local f = v.frame
+				f.InputBegan:Connect(function(inp) pressHand(c, f, inp) end)
+			end
 		end
 		if #s.myHand == 0 then
 			maxText(text(hand, { Text = "(มือว่างเปล่า 🫥)", Font = FONT_BODY, TextColor3 = C.Gray, Size = UDim2.fromScale(0.5, 0.4) }), 24)
@@ -903,6 +1026,7 @@ function MatchUI.Build(gui, overlay, cb)
 	end
 
 	local function exitMatch()
+		cancelDrag()
 		Perf.SetMatch(false)
 		closedId = currentId
 		root.Visible = false
@@ -926,7 +1050,7 @@ function MatchUI.Build(gui, overlay, cb)
 			Position = UDim2.fromScale(0.05, 0.38), Size = UDim2.fromScale(0.9, 0.15) }), 26)
 		maxText(text(box, { Text = ("+%d 💎"):format(reward or 0), Font = FONT_NUM, TextColor3 = C.Purple,
 			Position = UDim2.fromScale(0.05, 0.53), Size = UDim2.fromScale(0.9, 0.17) }), 40)
-		local b = chunkyButton(box, "🏠 กลับล็อบบี้", C.Lime, function() exitMatch() end)
+		local b = chunkyButton(box, "🌍 กลับไปเดินเล่น", C.Lime, function() exitMatch() end)
 		b.AnchorPoint = Vector2.new(0.5, 0)
 		b.Position = UDim2.fromScale(0.5, 0.75)
 		b.Size = UDim2.fromScale(0.6, 0.18)
@@ -955,15 +1079,23 @@ function MatchUI.Build(gui, overlay, cb)
 			end
 		end)
 	end)
-	local surrArmed = false
+	local surrArmed, surrTok = false, 0
 	surrBtn.Activated:Connect(function()
 		if not state or ended then return end
 		if not surrArmed then
 			surrArmed = true
+			surrTok += 1
+			local my = surrTok
 			surrBtn.Text = "แน่ใจนะ? กดอีกที"
-			task.delay(3, function() surrArmed = false; surrBtn.Text = "🏳️ ยอมแพ้" end)
+			wobble(surrBtn)
+			task.delay(3, function()
+				if surrTok == my then surrArmed = false; surrBtn.Text = "🏳️ ยอมแพ้" end
+			end)
 			return
 		end
+		surrArmed = false
+		surrTok += 1
+		surrBtn.Text = "🏳️ ยอมแพ้"
 		Net.fire("Surrender")
 	end)
 
@@ -985,6 +1117,10 @@ function MatchUI.Build(gui, overlay, cb)
 			logLines = {}
 			logLbl.Text = ""
 			clear(fx)
+			cancelDrag()
+			seenField, myGateFrame = {}, nil
+			surrArmed, surrTok = false, surrTok + 1
+			surrBtn.Text = "🏳️ ยอมแพ้"
 			root.Visible = true
 			Perf.SetMatch(true)
 			if cb.OnStart then task.spawn(cb.OnStart) end

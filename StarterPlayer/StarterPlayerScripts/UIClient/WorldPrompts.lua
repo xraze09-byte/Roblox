@@ -3,76 +3,116 @@ local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
 
 local Juice = require(script.Parent:WaitForChild("Juice"))
 
 local TAG = "FloatSpot"
+local INK = Color3.fromRGB(25, 10, 45)
+local COOLDOWN = 0.4
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local WorldPrompts = {}
 local spots = {}
 local enabled = true
+local started = false
 local onAction = function() end
 local nearest = nil
+local lastUse = 0
+
+-- ห้ามรอ (yield) ใน callback ของ ContextActionService → แยกเธรดเสมอ
+local function use(s, part)
+	if not enabled or os.clock() - lastUse < COOLDOWN then return end
+	lastUse = os.clock()
+	Juice.squish(s.btn)
+	task.spawn(onAction, s.action, part)
+end
 
 local function build(part)
 	if spots[part] or not part:IsA("BasePart") then return end
 	local action = part:GetAttribute("Action")
-	if not action then return end
-	local color = part:GetAttribute("Color") or Color3.fromRGB(255, 220, 60)
+	if typeof(action) ~= "string" then return end
+	local color = part:GetAttribute("Color")
+	if typeof(color) ~= "Color3" then color = Color3.fromRGB(255, 220, 60) end
+	local range = tonumber(part:GetAttribute("Range")) or 14
 
-	-- ต้องอยู่ใน PlayerGui + ตั้ง Adornee ถึงจะกดได้ (ถ้าอยู่ใน workspace จะกดไม่ติด)
+	-- อยู่ใน PlayerGui + ตั้ง Adornee ถึงจะกดได้
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "Spot_" .. action
 	bb.Adornee = part
-	bb.Size = UDim2.fromOffset(170, 64)
-	bb.StudsOffset = Vector3.new(0, part:GetAttribute("Height") or 3, 0)
+	bb.Size = UDim2.fromOffset(180, 66)
+	bb.StudsOffset = Vector3.new(0, tonumber(part:GetAttribute("Height")) or 3, 0)
 	bb.AlwaysOnTop = true
 	bb.LightInfluence = 0
+	bb.MaxDistance = range + 8
 	bb.ResetOnSpawn = false
 	bb.Active = true
+	bb.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	bb.Enabled = false
 	bb.Parent = playerGui
 
 	local btn = Instance.new("TextButton")
 	btn.AnchorPoint = Vector2.new(0.5, 0.5)
 	btn.Position = UDim2.fromScale(0.5, 0.5)
-	btn.Size = UDim2.fromScale(1, 0.8)
+	btn.Size = UDim2.fromScale(0.94, 0.78)
 	btn.AutoButtonColor = false
 	btn.BackgroundColor3 = color
 	btn.Font = Juice.Font
 	btn.TextScaled = true
-	btn.TextColor3 = Color3.fromRGB(25, 10, 45)
-	btn.Text = part:GetAttribute("Label") or action
+	btn.TextColor3 = INK
+	btn.Text = tostring(part:GetAttribute("Label") or action)
 	btn.Parent = bb
 	Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
 	local st = Instance.new("UIStroke")
 	st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	st.Thickness = 3; st.Color = Color3.fromRGB(25, 10, 45); st.Parent = btn
+	st.Thickness = 3; st.Color = INK; st.Parent = btn
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 12), UDim.new(0, 12)
+	pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 6), UDim.new(0, 6)
+	pad.Parent = btn
 
+	-- ป้ายปุ่ม E: ขึ้นเฉพาะจุดที่ใกล้ที่สุด และเฉพาะเครื่องที่มีคีย์บอร์ด
 	local key = Instance.new("TextLabel")
 	key.AnchorPoint = Vector2.new(0.5, 0.5)
-	key.Position = UDim2.new(1, -6, 0, 6)
-	key.Size = UDim2.fromOffset(26, 26)
+	key.Position = UDim2.new(1, 4, 0, -2)
+	key.Size = UDim2.fromOffset(28, 28)
 	key.BackgroundColor3 = Color3.new(1, 1, 1)
 	key.Font = Juice.Font
 	key.TextScaled = true
+	key.TextColor3 = INK
 	key.Text = "E"
-	key.Visible = not game:GetService("UserInputService").TouchEnabled
+	key.Visible = false
+	key.ZIndex = 2
 	key.Parent = btn
 	Instance.new("UICorner", key).CornerRadius = UDim.new(1, 0)
+	local ks = Instance.new("UIStroke")
+	ks.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	ks.Thickness = 2; ks.Color = INK; ks.Parent = key
 
 	Juice.bind(btn)
 	Juice.wobble(btn, { Amp = 3, Rot = 4, Speed = 2.5 })
-	btn.Activated:Connect(function() if enabled then onAction(action, part) end end)
 
-	spots[part] = { gui = bb, btn = btn, near = false, action = action }
+	local s = { gui = bb, btn = btn, key = key, near = false, action = action, range = range }
+	btn.Activated:Connect(function() use(s, part) end)
+	spots[part] = s
 end
 
 local function remove(part)
 	local s = spots[part]
-	if s then s.gui:Destroy(); spots[part] = nil end
+	if not s then return end
+	spots[part] = nil
+	if nearest == part then nearest = nil end
+	s.gui:Destroy()
+end
+
+local function setNearest(best)
+	if best == nearest then return end
+	local old = nearest and spots[nearest]
+	if old then old.key.Visible = false end
+	nearest = best
+	local s = best and spots[best]
+	if s then s.key.Visible = UserInputService.KeyboardEnabled end
 end
 
 local acc = 0
@@ -84,9 +124,8 @@ RunService.Heartbeat:Connect(function(dt)
 	local root = ch and ch:FindFirstChild("HumanoidRootPart")
 	local best, bestD = nil, nil
 	for part, s in spots do
-		local range = part:GetAttribute("Range") or 14
-		local d = root and (part.Position - root.Position).Magnitude or math.huge
-		local near = enabled and d <= range
+		local d = (root and part.Parent) and (part.Position - root.Position).Magnitude or math.huge
+		local near = enabled and d <= s.range
 		if near ~= s.near then
 			s.near = near
 			if near then
@@ -98,7 +137,7 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 		if near and (not bestD or d < bestD) then best, bestD = part, d end
 	end
-	nearest = best
+	setNearest(best)
 end)
 
 ContextActionService:BindAction("FloatSpotUse", function(_, state)
@@ -107,13 +146,14 @@ ContextActionService:BindAction("FloatSpotUse", function(_, state)
 	end
 	local s = spots[nearest]
 	if not s then return Enum.ContextActionResult.Pass end
-	Juice.squish(s.btn)
-	onAction(s.action, nearest)
+	use(s, nearest)
 	return Enum.ContextActionResult.Sink
 end, false, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
 function WorldPrompts.Start(handler)
-	onAction = handler
+	onAction = handler or onAction
+	if started then return end
+	started = true
 	for _, p in CollectionService:GetTagged(TAG) do build(p) end
 	CollectionService:GetInstanceAddedSignal(TAG):Connect(build)
 	CollectionService:GetInstanceRemovedSignal(TAG):Connect(remove)
@@ -123,7 +163,7 @@ function WorldPrompts.SetEnabled(on)
 	enabled = on
 	if not on then
 		for _, s in spots do s.near = false; s.gui.Enabled = false end
-		nearest = nil
+		setNearest(nil)
 	end
 end
 

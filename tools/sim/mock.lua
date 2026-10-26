@@ -50,6 +50,8 @@ local function newInstance(class)
 		if p then table.insert(p._children, self) end
 	end
 	function inst:IsA(c) return c == class or c == "Instance" or (ClassIs[class] and ClassIs[class][c]) or false end
+	function inst:FindFirstAncestorWhichIsA(c) local n = rawget(self, "_parent"); while n do if n:IsA(c) then return n end n = rawget(n, "_parent") end return nil end
+	function inst:FindFirstAncestor(name) local n = rawget(self, "_parent"); while n do if n.Name == name then return n end n = rawget(n, "_parent") end return nil end
 	function inst:GetChildren() return table.clone(self._children) end
 	function inst:GetDescendants()
 		local out = {}
