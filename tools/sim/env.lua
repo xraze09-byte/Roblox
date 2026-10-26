@@ -154,7 +154,7 @@ local globalsBase = { game=game, workspace=workspace, Instance=Instance, Vector2
 		end
 		return type(v) end,
 	warn = function(...) M.warnings = M.warnings or {}; table.insert(M.warnings, table.concat({...}, " ")) end,
-	tick = os.clock, time = os.clock, os = os, string = string, table = table, math = math, pairs = pairs, ipairs = ipairs,
+	tick = function() return M.clock() end, time = function() return M.clock() end, os = setmetatable({ clock = function() return M.clock() end, time = function() return 1.7e9 + M.clock() end }, { __index = os }), string = string, table = table, math = math, pairs = pairs, ipairs = ipairs,
 	next = next, select = select, type = type, tostring = tostring, tonumber = tonumber, pcall = pcall, xpcall = xpcall,
 	error = error, assert = assert, unpack = table.unpack, setmetatable = setmetatable, getmetatable = getmetatable,
 	rawget = rawget, rawset = rawset, rawequal = rawequal, print = print, utf8 = utf8, coroutine = coroutine, bit32 = bit32,

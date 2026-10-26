@@ -11,6 +11,8 @@ for _, n in ipairs(RE) do
 	local r = newInstance("RemoteEvent"); r.Name = n; r.Parent = Remotes
 	rawset(r, "OnClientEvent", Signal()); rawset(r, "OnServerEvent", Signal())
 	rawset(r, "FireServer", function(self, ...) M.fired = M.fired or {}; table.insert(M.fired, { n, ... }) end)
+	rawset(r, "FireClient", function(self, plr, ...) M.sent = M.sent or {}; table.insert(M.sent, { n, plr, ... }) end)
+	rawset(r, "FireAllClients", function(self, ...) end)
 end
 Remotes.Parent = RS
 
