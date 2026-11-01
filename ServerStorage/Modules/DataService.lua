@@ -9,7 +9,7 @@ local Decks = require(Shared:WaitForChild("Decks"))
 local DeckRules = require(Shared:WaitForChild("DeckRules"))
 
 local DEFAULT = {
-	Gems = 100, Wins = 0, Losses = 0, Streak = 0, BestStreak = 0,
+	Gems = 100, Gold = 500, Wins = 0, Losses = 0, Streak = 0, BestStreak = 0,
 	Collection = {}, Deck = {}, Pity = { Epic = 0, Legend = 0 },
 	Quests = { Day = 0, List = {} }, Farms = {}, TowerFloor = 1,
 }
@@ -54,7 +54,16 @@ end
 
 local function publish(player, data)
 	player:SetAttribute("Gems", data.Gems)
+	player:SetAttribute("Gold", data.Gold or 0)
 	player:SetAttribute("Streak", data.Streak)
+
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then
+		local g = ls:FindFirstChild("Gold")
+		if g then g.Value = data.Gold or 0 end
+		local gems = ls:FindFirstChild("Gems")
+		if gems then gems.Value = data.Gems or 0 end
+	end
 end
 
 local function changed(player)
@@ -104,6 +113,14 @@ function DataService.AddGems(player, amount)
 	local profile = profiles[player]
 	if not profile then return 0 end
 	profile.Data.Gems += amount
+	changed(player)
+	return amount
+end
+
+function DataService.AddGold(player, amount)
+	local profile = profiles[player]
+	if not profile then return 0 end
+	profile.Data.Gold = math.max(0, (profile.Data.Gold or 0) + amount)
 	changed(player)
 	return amount
 end

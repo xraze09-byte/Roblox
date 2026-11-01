@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIKit = require(Shared.UI.UIKit)
 local FX = require(Shared.UI.FX)
+local Icons = require(Shared.UI.Icons)
 
 local Config = require(Shared.Config)
 local Theme = UIKit.Theme
@@ -17,7 +18,6 @@ local function isShield(def) return def.Type == "Spell" and type(def.Effect) == 
 DeckBuilder.QUOTA = Config and Config.DECK_COMPOSITION or { Character = 12, Weapon = 5, Spell = 7 }
 local TYPES = { "Character", "Weapon", "Spell" }
 local TYPE_ORDER = { Character = 1, Weapon = 2, Spell = 3 }
-local TYPE_EMOJI = { Character = "🤪", Weapon = "🗡️", Spell = "✨" }
 local SWAP_SFX = { "Boing", "Honk", "Quack", "Slip", "Pop" }
 
 local function borderStroke(t)
@@ -33,11 +33,31 @@ local function tile(parent, def, order)
 		ZIndex = z, Parent = face }, { UIKit.corner(Theme.Radius) })
 	UIKit.label({ Text = Theme.TypeLabel[def.Type] or def.Type, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.5, 0.02),
 		AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 16, ZIndex = z + 1, Parent = face })
-	UIKit.label({ Text = def.Emoji or TYPE_EMOJI[def.Type] or "❓", StrokeThickness = 0, Size = UDim2.fromScale(0.6, 0.32),
-		Position = UDim2.fromScale(0.5, 0.23), AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 60, ZIndex = z + 1, Parent = face })
+
+	if typeof(def.Art) == "string" and def.Art ~= "" and def.Art ~= "rbxassetid://0" then
+		local artImg = Instance.new("ImageLabel")
+		artImg.Name = "Art"
+		artImg.Size = UDim2.fromScale(0.6, 0.34)
+		artImg.Position = UDim2.fromScale(0.5, 0.22)
+		artImg.AnchorPoint = Vector2.new(0.5, 0)
+		artImg.BackgroundTransparency = 1
+		artImg.ScaleType = Enum.ScaleType.Fit
+		artImg.Image = def.Art
+		artImg.ZIndex = z + 1
+		artImg.Parent = face
+	else
+		local iconKey = def.Type == "Spell" and "Lightning" or (def.Type == "Weapon" and "Play" or "Sort")
+		Icons.image(iconKey, {
+			Size = UDim2.fromScale(0.4, 0.32),
+			Position = UDim2.fromScale(0.5, 0.23),
+			AnchorPoint = Vector2.new(0.5, 0),
+			ZIndex = z + 1,
+		}, face)
+	end
+
 	UIKit.label({ Text = def.Name or def.Id, Size = UDim2.fromScale(0.92, 0.15), Position = UDim2.fromScale(0.5, 0.57),
 		AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 18, ZIndex = z + 1, Parent = face })
-	local stat = def.Type == "Character" and string.format("⚔%s ❤%s", tostring(def.ATK or "?"), tostring(def.HP or "?"))
+	local stat = def.Type == "Character" and string.format("ATK %s  HP %s", tostring(def.ATK or "?"), tostring(def.HP or "?"))
 		or def.Type == "Weapon" and ("+" .. tostring(def.Bonus or "?"))
 		or (Theme.RarityLabel[def.Rarity] or "")
 	UIKit.label({ Text = stat, Color = C.Yellow, Size = UDim2.fromScale(0.9, 0.12), Position = UDim2.fromScale(0.5, 0.74),
@@ -114,6 +134,33 @@ function DeckBuilder.Open(parent, opts)
 		UIKit.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }) })
 
 	local tiles, refresh, remove = {}, nil, nil
+
+	local function updateBuilderLayout()
+		local pw = panel.AbsoluteSize.X
+		if pw > 0 and pw < 660 then
+			left.Size = UDim2.new(0.55, -8, 1, -64)
+			right.Position = UDim2.new(0.55, 8, 0, 50)
+			right.Size = UDim2.new(0.45, -16, 1, -64)
+			local gl = grid:FindFirstChildOfClass("UIGridLayout")
+			if gl then
+				gl.CellSize = UDim2.fromOffset(102, 146)
+				gl.CellPadding = UDim2.fromOffset(8, 10)
+			end
+		else
+			left.Size = UDim2.new(0.62, -10, 1, -64)
+			right.Position = UDim2.new(0.62, 10, 0, 50)
+			right.Size = UDim2.new(0.38, -24, 1, -64)
+			local gl = grid:FindFirstChildOfClass("UIGridLayout")
+			if gl then
+				gl.CellSize = UDim2.fromOffset(124, 172)
+				gl.CellPadding = UDim2.fromOffset(16, 18)
+			end
+		end
+	end
+	pcall(function()
+		panel:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateBuilderLayout)
+	end)
+	updateBuilderLayout()
 
 	local function shieldCount()
 		local n = 0
@@ -205,7 +252,7 @@ function DeckBuilder.Open(parent, opts)
 			local n, q, m = count(t), DeckBuilder.QUOTA[t], meters[t]
 			valid = valid and n == q
 			UIKit.tween(m.fill, 0.25, { Size = UDim2.fromScale(math.clamp(n / q, 0, 1), 1) }, Enum.EasingStyle.Back)
-			local txt = string.format("%s %d/%d%s", Theme.TypeLabel[t], n, q, n == q and " ✔" or "")
+			local txt = string.format("%s %d/%d%s", Theme.TypeLabel[t], n, q, n == q and " (ครบ)" or "")
 			if n ~= m.last then
 				if m.last >= 0 then UIKit.bounceText(m.lbl, txt, 0.25) else UIKit.setText(m.lbl, txt) end
 				if n == q and m.last >= 0 then FX.sparkles(m.holder, Theme.TypeColor[t], 8) end

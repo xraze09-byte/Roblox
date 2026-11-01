@@ -9,10 +9,10 @@ local Settings = require(UI:WaitForChild("Settings"))
 local FX = {}
 local STYLE = {
 	Damage = { Color = Theme.Color.Red, Suffix = "", Y = 0 },
-	Heal   = { Color = Theme.Color.Green, Suffix = " ❤️", Y = 0 },
-	Atk    = { Color = Color3.fromRGB(255, 140, 40), Suffix = " ⚔️", Y = 0.3 },
-	Shield = { Color = Theme.Color.Blue, Suffix = " 🛡️", Y = 0.3 },
-	Points = { Color = Theme.Color.Yellow, Suffix = " 💰", Y = 0 },
+	Heal   = { Color = Theme.Color.Green, Suffix = " HP", Y = 0 },
+	Atk    = { Color = Color3.fromRGB(255, 140, 40), Suffix = " ATK", Y = 0.3 },
+	Shield = { Color = Theme.Color.Blue, Suffix = " โล่", Y = 0.3 },
+	Points = { Color = Theme.Color.Yellow, Suffix = " แต้ม", Y = 0 },
 }
 local shaking = {}
 

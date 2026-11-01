@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIKit = require(Shared.UI.UIKit)
 local FX = require(Shared.UI.FX)
+local Icons = require(Shared.UI.Icons)
 
 local Theme = UIKit.Theme
 local C, CENTER = Theme.Color, UIKit.CENTER
@@ -13,12 +14,12 @@ local FLOOR_H = 124
 local function sampleFloors()
 	local names = { "ห้องเก็บถุงเท้า", "ชั้นแมวนอนทับคีย์บอร์ด", "โถงเสียงไวไฟหลุด", "ห้องรอคิวห้องน้ำ",
 		"ลานกาวลอยฟ้า", "ห้องประชุมที่ควรเป็นอีเมล", "ครัวมาม่าตอนตีสาม", "ระเบียงคนลืมรหัส" }
-	local bosses = { "🦆", "🐸", "🗿", "🤡" }
+	local bosses = { "เป็ดซ่า", "กบเกลือ", "โมอาย", "ตัวตลก" }
 	local floors = {}
 	for i = 1, 20 do
 		local boss = i % 5 == 0
 		floors[i] = { Name = names[(i - 1) % #names + 1], Boss = boss and bosses[i // 5] or nil,
-			Reward = boss and ("💎 x" .. i * 10) or ("🪙 x" .. i * 50) }
+			Reward = boss and ("เจม x" .. i * 10) or ("เหรียญ x" .. i * 50) }
 	end
 	return floors
 end
@@ -76,9 +77,13 @@ function TowerUI.Open(parent, opts)
 			loop(UIKit.getScale(btn), 0.5, { Scale = 1.08 })
 			FX.rarityGlow(holder, boss and "Mystic" or "Legend")
 		else
-			UIKit.label({ Text = state == "Clear" and "✔" or "🔒", StrokeThickness = state == "Clear" and 3 or 0,
-				Color = C.White, Size = UDim2.fromOffset(46, 46), Position = UDim2.new(1, boss and -100 or -14, 0.5, 0),
-				AnchorPoint = Vector2.new(1, 0.5), MaxTextSize = 40, ZIndex = z + 2, Parent = holder })
+			local iconKey = state == "Clear" and "Checkmark" or "Lock"
+			Icons.image(iconKey, {
+				Size = UDim2.fromOffset(36, 36),
+				Position = UDim2.new(1, boss and -100 or -14, 0.5, 0),
+				AnchorPoint = Vector2.new(1, 0.5),
+				ZIndex = z + 2,
+			}, holder)
 		end
 	end
 

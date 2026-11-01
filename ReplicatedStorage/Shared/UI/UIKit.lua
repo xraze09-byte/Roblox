@@ -368,14 +368,23 @@ function UIKit.panel(parent, title, color)
 	local back = UIKit.new("TextButton", { Name = "PanelBackdrop", Text = "", AutoButtonColor = false, BackgroundColor3 = C.TableDark,
 		BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 40, Parent = parent })
 	UIKit.tween(back, 0.2, { BackgroundTransparency = 0.3 })
-	local holder, panel = UIKit.comicBox({ Name = "PanelHolder", Parent = back, Size = UDim2.fromScale(0.74, 0.8),
-		Position = UDim2.fromScale(0.5, 0.54), AnchorPoint = CENTER, Color = C.Panel, ShadowOffset = 10, StrokeThickness = 4, ZIndex = 41 })
+
+	local scr = (parent:IsA("GuiObject") and parent.AbsoluteSize) or (parent:IsA("LayerCollector") and parent.AbsoluteSize) or Vector2.new(1024, 768)
+	local isSmall = scr.X < 720 or scr.Y < 520
+	local pSize = isSmall and UDim2.new(0.96, 0, 0.94, 0) or UDim2.fromScale(0.82, 0.85)
+	local holder, panel = UIKit.comicBox({ Name = "PanelHolder", Parent = back, Size = pSize,
+		Position = UDim2.fromScale(0.5, 0.52), AnchorPoint = CENTER, Color = C.Panel, ShadowOffset = isSmall and 6 or 10, StrokeThickness = 4, ZIndex = 41 })
 	panel.Name = "Panel"
 	panel:SetAttribute("IsKitPanel", true)
-	local _, ribbon = UIKit.comicBox({ Name = "Ribbon", Parent = holder, Size = UDim2.new(0.5, 0, 0, 56), Position = UDim2.new(0.5, 0, 0, -18),
-		AnchorPoint = CENTER, Color = color or C.Pink, Tilt = -3, ZIndex = 45 })
+
+	local maxC = Instance.new("UISizeConstraint")
+	maxC.MaxSize = Vector2.new(1040, 700)
+	maxC.Parent = holder
+
+	local _, ribbon = UIKit.comicBox({ Name = "Ribbon", Parent = holder, Size = isSmall and UDim2.new(0.65, 0, 0, 48) or UDim2.new(0.5, 0, 0, 56),
+		Position = UDim2.new(0.5, 0, 0, -18), AnchorPoint = CENTER, Color = color or C.Pink, Tilt = -3, ZIndex = 45 })
 	UIKit.label({ Text = title or "", Size = UDim2.new(1, -20, 1, -10), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER,
-		MaxTextSize = 34, StrokeThickness = 4, Parent = ribbon })
+		MaxTextSize = isSmall and 26 or 34, StrokeThickness = 4, Parent = ribbon })
 	local function close()
 		if not back.Parent then return end
 		UIKit.sfx("Whoosh")
@@ -383,7 +392,7 @@ function UIKit.panel(parent, title, color)
 		UIKit.tween(back, 0.18, { BackgroundTransparency = 1 })
 		task.delay(UIKit.dur(0.2), function() if back.Parent then back:Destroy() end end)
 	end
-	UIKit.button({ Name = "Close", Parent = holder, Text = "X", Color = C.Red, Size = UDim2.fromOffset(52, 52),
+	UIKit.button({ Name = "Close", Parent = holder, Text = "X", Color = C.Red, Size = isSmall and UDim2.fromOffset(42, 42) or UDim2.fromOffset(52, 52),
 		Position = UDim2.new(1, -8, 0, 8), AnchorPoint = CENTER, Radius = UDim.new(1, 0), Tilt = 8, ZIndex = 46, OnClick = close })
 	panel.Destroying:Connect(function() if back.Parent then back:Destroy() end end)
 	local s = UIKit.getScale(holder)

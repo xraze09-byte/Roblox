@@ -52,7 +52,7 @@ function BountyBoard.Open(parent, opts)
 			AnchorPoint = CENTER, MaxTextSize = 80, ZIndex = z + 2, Parent = pic })
 		UIKit.label({ Text = e.Name or "???", Size = UDim2.fromScale(0.92, 0.1), Position = UDim2.fromScale(0.5, 0.58),
 			AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 20, ZIndex = z + 1, Parent = face })
-		UIKit.label({ Text = "ค่าหัว " .. fmt(e.Bounty) .. " 🍌", Color = C.Yellow, Size = UDim2.fromScale(0.92, 0.1),
+		UIKit.label({ Text = "ค่าหัว " .. fmt(e.Bounty) .. " แต้ม", Color = C.Yellow, Size = UDim2.fromScale(0.92, 0.1),
 			Position = UDim2.fromScale(0.5, 0.68), AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 20, ZIndex = z + 1, Parent = face })
 		UIKit.label({ Text = "ข้อหา: " .. (e.Crime or "กาวเกินพิกัด"), Color = C.Ink, StrokeThickness = 0, Wrap = true,
 			Size = UDim2.fromScale(0.9, 0.1), Position = UDim2.fromScale(0.5, 0.78), AnchorPoint = Vector2.new(0.5, 0),
@@ -75,7 +75,7 @@ function BountyBoard.Open(parent, opts)
 	if opts.Me then
 		local _, bar = UIKit.comicBox({ Parent = panel, Size = UDim2.new(1, -40, 0, 50), Position = UDim2.new(0.5, 0, 1, -16),
 			AnchorPoint = Vector2.new(0.5, 1), Color = C.Pink, Tilt = -1 })
-		UIKit.label({ Text = string.format("ค่าหัวคุณ: %s 🍌  (อันดับ #%s)", fmt(opts.Me.Bounty), tostring(opts.Me.Rank or "-")),
+		UIKit.label({ Text = string.format("ค่าหัวคุณ: %s แต้ม  (อันดับ #%s)", fmt(opts.Me.Bounty), tostring(opts.Me.Rank or "-")),
 			Size = UDim2.new(1, -20, 1, -10), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, MaxTextSize = 26, Parent = bar })
 	end
 	return panel

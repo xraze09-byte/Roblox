@@ -3,4 +3,5 @@
 *.rbxl.lock
 tools/sim/bundle.lua
 rojo.exe
-
+.gemini/
+*.bak

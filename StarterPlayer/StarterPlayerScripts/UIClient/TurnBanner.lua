@@ -39,8 +39,8 @@ function Banner.Show(isMine, isStart)
 	strip.BackgroundColor3 = isMine and Color3.fromRGB(70, 50, 0) or Color3.fromRGB(70, 10, 20)
 	title.TextColor3 = isMine and Theme.Color.Yellow or Theme.Color.Red
 	if isStart then
-		title.Text = "⚔️ เริ่มแมตช์!"
-		sub.Text = isMine and "คุณได้เริ่มก่อน 🔥" or "ศัตรูได้เริ่มก่อน 😈"
+		title.Text = "เริ่มแมตช์!"
+		sub.Text = isMine and "คุณได้เริ่มก่อน" or "ศัตรูได้เริ่มก่อน"
 	else
 		title.Text = isMine and "ตาของคุณ!" or "ตาของศัตรู"
 		sub.Text = isMine and "ลงการ์ด • เลือกการ์ดโจมตี • กดจบเทิร์น"

@@ -32,7 +32,6 @@ CardView.__index = CardView
 
 local CENTER = Vector2.new(0.5, 0.5)
 local TYPE_TEXT = { Character = "ตัวละคร", Spell = "เวท", Weapon = "อาวุธ", Leader = "ผู้นำ" }
-local TYPE_ICON = { Character = "🙂", Spell = "✨", Weapon = "🗡️", Leader = "👑" }
 
 local function hasArt(card)
 	return typeof(card.Art) == "string" and card.Art ~= "" and card.Art ~= "rbxassetid://0"
@@ -121,7 +120,7 @@ function CardView.new(card, opts)
 		BackgroundColor3 = Color3.fromRGB(235, 225, 205), ScaleType = Enum.ScaleType.Fit, Parent = body,
 	}, { UIKit.corner(UDim.new(0.08, 0)), UIKit.stroke(nil, 2) })
 	self.Icon = UIKit.label({ Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = CENTER, Parent = self.Art, StrokeThickness = 0, MaxTextSize = 100 })
-	self.Sleep = UIKit.label({ Text = "💤", Size = UDim2.fromScale(0.35, 0.35), Position = UDim2.fromScale(0.98, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = self.Art, StrokeThickness = 0 })
+	self.Sleep = UIKit.label({ Text = "Zzz", Size = UDim2.fromScale(0.35, 0.35), Position = UDim2.fromScale(0.98, 0.02), AnchorPoint = Vector2.new(1, 0), Parent = self.Art, StrokeThickness = 2, TextColor3 = Theme.Color.Yellow })
 	self.Status = UIKit.label({
 		Text = "", Size = UDim2.fromScale(0.95, 0.24), Position = UDim2.fromScale(0.5, 0.98),
 		AnchorPoint = Vector2.new(0.5, 1), Parent = self.Art, StrokeThickness = 1,
@@ -183,20 +182,20 @@ function CardView:Update(card)
 	end
 	local art = hasArt(card)
 	self.Art.Image = art and card.Art or ""
-	self.Icon.Text = TYPE_ICON[card.Type] or "❓"
+	self.Icon.Text = TYPE_TEXT[card.Type] or card.Type or ""
 	self.Icon.Visible = not art
 	self.Sleep.Visible = self.ShowSleep == true and card.Type == "Character" and not card.CanAttack
 	local status = {}
-	if card.Frozen then table.insert(status, "❄️") end
-	if card.Slime then table.insert(status, "🟢") end
-	if card.WeaponName then table.insert(status, "🗡️" .. tostring(card.WeaponDur or 0)) end
+	if card.Frozen then table.insert(status, "แช่แข็ง") end
+	if card.Slime then table.insert(status, "เมือก") end
+	if card.WeaponName then table.insert(status, "อาวุธ(" .. tostring(card.WeaponDur or 0) .. ")") end
 	self.Status.Text = table.concat(status, " ")
 
 	self.Gradient.Enabled = card.GateResult == "Golden"
 	if card.GateResult == "Poop" then
 		self.BaseBg = Color3.fromRGB(150, 100, 60)
 		self.Art.Image = ""
-		self.Icon.Text = "💩"
+		self.Icon.Text = "เกลือ"
 		self.Icon.Visible = true
 	else
 		self.BaseBg = Theme.Color.CardBg

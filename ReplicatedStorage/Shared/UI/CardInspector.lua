@@ -153,7 +153,7 @@ local function build()
 		AnchorPoint = Vector2.new(0.5, 1), Parent = ui.box,
 	})
 	local close = UIKit.button({
-		Text = "✖", Color = Theme.Color.Red, Size = UDim2.fromScale(0.05, 0.09),
+		Text = "X", Color = Theme.Color.Red, Size = UDim2.fromScale(0.05, 0.09),
 		Position = UDim2.fromScale(1, 0), AnchorPoint = Vector2.new(0.6, 0.4), Parent = ui.box,
 		OnClick = function() CardInspector.Close() end,
 	})
@@ -193,24 +193,24 @@ local function show(card, quiet)
 	if el then chip(tags, "ธาตุ" .. el.Text, el.Color) end
 
 	local stats = row(ui.info, 3)
-	chip(stats, "💰 ค่าร่าย " .. statText(card.Cost or 0, base and base.Cost), Theme.Color.Yellow)
+	chip(stats, "ค่าร่าย " .. statText(card.Cost or 0, base and base.Cost), Theme.Color.Yellow)
 	if card.Type == "Character" or card.Type == "Leader" then
-		chip(stats, "⚔️ โจมตี " .. statText(card.ATK or 0, base and base.ATK), Theme.Color.Red)
-		chip(stats, "❤️ พลังชีวิต " .. statText(math.max(card.HP or 0, 0), base and base.HP), Theme.Color.Green)
+		chip(stats, "โจมตี " .. statText(card.ATK or 0, base and base.ATK), Theme.Color.Red)
+		chip(stats, "พลังชีวิต " .. statText(math.max(card.HP or 0, 0), base and base.HP), Theme.Color.Green)
 	elseif card.Type == "Weapon" then
-		if typeof(card.Bonus) == "number" then chip(stats, "🗡️ โบนัส +" .. card.Bonus, Theme.Color.Red) end
-		if typeof(card.Durability) == "number" then chip(stats, "🔧 ความทน " .. card.Durability, Theme.Color.Blue) end
-		if card.Freeze then chip(stats, "❄️ แช่แข็งเป้า", Theme.Color.Blue) end
+		if typeof(card.Bonus) == "number" then chip(stats, "โบนัส +" .. card.Bonus, Theme.Color.Red) end
+		if typeof(card.Durability) == "number" then chip(stats, "ความทน " .. card.Durability, Theme.Color.Blue) end
+		if card.Freeze then chip(stats, "แช่แข็งเป้า", Theme.Color.Blue) end
 	end
 
 	local desc = card.Desc or (base and base.Desc)
 	if desc and desc ~= "" then
-		local s = section(ui.info, 4, "📜 ความสามารถ", Color3.fromRGB(60, 100, 200))
+		local s = section(ui.info, 4, "ความสามารถ", Color3.fromRGB(60, 100, 200))
 		text(s, 1, esc(desc))
 	end
 
 	if card.Keywords and #card.Keywords > 0 then
-		local s = section(ui.info, 5, "🏷️ คีย์เวิร์ด", Color3.fromRGB(140, 70, 210))
+		local s = section(ui.info, 5, "คีย์เวิร์ด", Color3.fromRGB(140, 70, 210))
 		for i, kw in ipairs(card.Keywords) do
 			text(s, i, ("<b>%s</b> — %s"):format(esc(Theme.Keyword[kw] or kw), esc(Theme.KeywordDesc[kw] or "-")))
 		end
@@ -218,15 +218,15 @@ local function show(card, quiet)
 
 	local status = {}
 	local gate = card.GateResult and Theme.Gate[card.GateResult]
-	if gate then table.insert(status, "🎲 ผลเกต: " .. gate.Text) end
-	if card.Frozen then table.insert(status, "❄️ ถูกแช่แข็ง") end
-	if card.Slime then table.insert(status, "🟢 ติดเมือก") end
+	if gate then table.insert(status, "ผลเกต: " .. gate.Text) end
+	if card.Frozen then table.insert(status, "ถูกแช่แข็ง") end
+	if card.Slime then table.insert(status, "ติดเมือก") end
 	if card.WeaponName then
-		table.insert(status, ("🗡️ ถืออาวุธ %s (เหลือ %s ครั้ง)"):format(esc(card.WeaponName), tostring(card.WeaponDur or 0)))
+		table.insert(status, ("ถืออาวุธ %s (เหลือ %s ครั้ง)"):format(esc(card.WeaponName), tostring(card.WeaponDur or 0)))
 	end
-	if card.Type == "Character" and card.CanAttack == false then table.insert(status, "💤 เทิร์นนี้ยังโจมตีไม่ได้") end
+	if card.Type == "Character" and card.CanAttack == false then table.insert(status, "เทิร์นนี้ยังโจมตีไม่ได้") end
 	if #status > 0 then
-		local s = section(ui.info, 6, "📍 สถานะตอนนี้", Color3.fromRGB(200, 90, 40))
+		local s = section(ui.info, 6, "สถานะตอนนี้", Color3.fromRGB(200, 90, 40))
 		for i, line in ipairs(status) do text(s, i, line) end
 	end
 

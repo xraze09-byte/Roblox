@@ -19,7 +19,7 @@ local Remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
 local NotificationRE = Remotes and (Remotes:FindFirstChild("Notification") or Remotes:WaitForChild("Notification", 10))
 
 if NotificationRE then
-	NotificationRE.OnServerEvent:Connect(function(player, message, color, lifetime)
+	NotificationRE.OnServerEvent:Connect(function(player, message, color, lifetime, icon)
 		if not NotificationSystem then
 			NotificationSystem = getNotificationSystem()
 		end
@@ -35,8 +35,11 @@ if NotificationRE then
 		if typeof(lifetime) ~= "number" or lifetime <= 0 or lifetime > 30 then
 			lifetime = 4
 		end
+		if typeof(icon) ~= "string" then
+			icon = nil
+		end
 		if NotificationSystem then
-			NotificationSystem.NotifyPlayer(player, message, color, lifetime)
+			NotificationSystem.NotifyPlayer(player, message, color, lifetime, icon)
 		end
 	end)
 end
@@ -47,7 +50,7 @@ local function welcomePlayer(player)
 		NotificationSystem = getNotificationSystem()
 	end
 	if player and player.Parent and NotificationSystem then
-		NotificationSystem.NotifyPlayer(player, "Welcome, " .. (player.DisplayName or player.Name) .. "!", Color3.fromRGB(255, 187, 69), 4)
+		NotificationSystem.NotifyPlayer(player, "Welcome, " .. (player.DisplayName or player.Name) .. "!", Color3.fromRGB(255, 187, 69), 4, "Checkmark")
 	end
 end
 

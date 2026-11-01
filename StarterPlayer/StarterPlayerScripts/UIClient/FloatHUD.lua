@@ -6,6 +6,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Decks = require(Shared:WaitForChild("Decks"))
 local CardData = require(Shared:WaitForChild("CardData"))
+local Icons = require(Shared:WaitForChild("UI"):WaitForChild("Icons"))
 local Net = require(script.Parent:WaitForChild("Net"))
 local Juice = require(script.Parent:WaitForChild("Juice"))
 
@@ -84,14 +85,31 @@ local function blobButton(parent, text, color, size, onClick)
 	return b
 end
 -- ปุ่มเต็มแถวในกล่อง: ห่อด้วย holder เพื่อให้เด้ง/ยุบจากตรงกลาง (UIListLayout ไม่สน AnchorPoint)
-local function row(parent, order, text, color, fn, h)
+local function row(parent, order, text, color, fn, h, iconKey)
 	local holder = Instance.new("Frame")
 	holder.BackgroundTransparency = 1
-	holder.Size = UDim2.new(1, 0, 0, h or 46)
+	holder.Size = UDim2.new(1, 0, 0, math.max(44, h or 46))
 	holder.LayoutOrder = order
 	holder.Parent = parent
 	local b = blobButton(holder, text, color, UDim2.fromScale(1, 1), fn)
 	b.Position = UDim2.fromScale(0.5, 0.5)
+
+	if iconKey and Icons.has(iconKey) then
+		b.TextXAlignment = Enum.TextXAlignment.Left
+		local pad = b:FindFirstChildOfClass("UIPadding")
+		if pad then
+			pad.PaddingLeft = UDim.new(0, 48)
+			pad.PaddingRight = UDim.new(0, 12)
+		end
+		Icons.image(iconKey, {
+			Name = "RowIcon",
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 14, 0.5, 0),
+			Size = UDim2.fromOffset(22, 22),
+			ZIndex = b.ZIndex + 2,
+		}, holder)
+	end
+
 	return b, holder
 end
 
@@ -185,7 +203,39 @@ local function openPanel(owner, opts)
 	list.SortOrder = Enum.SortOrder.LayoutOrder
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	list.Parent = p
-	label(p, opts.Title, opts.Color or C.Yellow, 30).LayoutOrder = 0
+	local header = Instance.new("Frame")
+	header.Name = "PanelHeader"
+	header.BackgroundTransparency = 1
+	header.Size = UDim2.new(1, 0, 0, 32)
+	header.LayoutOrder = 0
+	header.Parent = p
+
+	local titleLbl = label(header, opts.Title, opts.Color or C.Yellow, 30)
+	titleLbl.Position = UDim2.new(0, 0, 0, 0)
+	titleLbl.Size = UDim2.new(1, -36, 1, 0)
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseBtn"
+	closeBtn.AutoButtonColor = false
+	closeBtn.AnchorPoint = Vector2.new(1, 0.5)
+	closeBtn.Position = UDim2.new(1, 0, 0.5, 0)
+	closeBtn.Size = UDim2.fromOffset(28, 28)
+	closeBtn.BackgroundColor3 = C.Red
+	closeBtn.Text = ""
+	closeBtn.ZIndex = 12
+	closeBtn.Parent = header
+	corner(closeBtn, UDim.new(1, 0))
+	stroke(closeBtn, C.Ink, 2)
+	Icons.image("Close", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(14, 14),
+		ZIndex = 13,
+	}, closeBtn)
+	Juice.bind(closeBtn)
+	closeBtn.Activated:Connect(closePopup)
+
 	opts.Build(p, w - PAD * 2)
 
 	-- คำนวณความสูงเอง (ไม่ใช้ AutomaticSize ที่คำนวณเพี้ยนเมื่อมี UIScale)
@@ -243,20 +293,36 @@ local function openRadial(owner, items, radius, a0, a1)
 	holder.Position = UDim2.fromOffset(c.X, c.Y)
 	holder.ZIndex = 10
 	holder.Parent = hud
-	local n, bw, bh = #items, 170, 48
+	local n = #items
+	local bw = math.clamp(math.floor(screen.X * 0.22), 130, 170)
+	local bh = 46 -- min 44px touch target
+	local r = math.clamp(math.min(screen.X, screen.Y) * 0.28, 95, radius or 150)
+
 	for i, it in items do
 		local t = (n == 1) and 0.5 or (i - 1) / (n - 1)
 		local a = math.rad(a0 + (a1 - a0) * t)
-		-- max ต้องไม่ต่ำกว่า min เสมอ (หน้าต่างเตี้ย/ScreenGui ยังไม่ได้ขนาด → math.clamp โยน error แล้วเมนูไม่เปิด)
 		local minX, minY = bw / 2 + EDGE, bh / 2 + EDGE
-		local px = math.clamp(c.X + math.cos(a) * radius, minX, math.max(minX, screen.X - bw / 2 - EDGE))
-		local py = math.clamp(c.Y + math.sin(a) * radius, minY, math.max(minY, screen.Y - bh / 2 - EDGE))
+		local px = math.clamp(c.X + math.cos(a) * r, minX, math.max(minX, screen.X - bw / 2 - EDGE))
+		local py = math.clamp(c.Y + math.sin(a) * r, minY, math.max(minY, screen.Y - bh / 2 - EDGE))
 		local b
 		b = blobButton(holder, it.Text, it.Color, UDim2.fromOffset(bw, bh), function()
 			if not it.Keep then closePopup() end
 			it.OnClick(b)
 		end)
 		b.Position = UDim2.fromOffset(px - c.X, py - c.Y)
+
+		if it.Icon and Icons.has(it.Icon) then
+			local pad = b:FindFirstChildOfClass("UIPadding")
+			if pad then pad.PaddingLeft = UDim.new(0, 36) end
+			Icons.image(it.Icon, {
+				Name = "RadialIcon",
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, 8, 0.5, 0),
+				Size = UDim2.fromOffset(24, 24),
+				ZIndex = b.ZIndex + 1,
+			}, b)
+		end
+
 		Juice.popIn(b, (i - 1) * 0.05)
 		Juice.wobble(b, { Amp = 2, Rot = 3, Speed = 3 })
 	end
@@ -269,7 +335,12 @@ local function paintQueue()
 	local fab = fabs.Battle
 	if not fab then return end
 	local waiting = queueMode ~= nil
-	fab.Icon.Text = waiting and "⏳" or "⚔️"
+	local iconInst = fab:FindFirstChild("Icon")
+	if iconInst and iconInst:IsA("ImageLabel") then
+		iconInst.Image = waiting and Icons.get("Pause") or Icons.get("Play")
+	elseif iconInst and iconInst:IsA("TextLabel") then
+		iconInst.Text = waiting and "รอ..." or "สู้!"
+	end
 	fab.Tag.Text = waiting and "กำลังหา..." or "สู้!"
 	fab.BackgroundColor3 = waiting and C.Pink or C.Red
 end
@@ -287,7 +358,7 @@ local function startMode(mode)
 	if not ok then toast(Net.message(status), C.Red) return end
 	if status == "WAITING" and not inMatch then
 		queueMode = mode
-		toast("🌐 กำลังหาคู่ต่อสู้... กด ⏳ อีกทีเพื่อยกเลิก", C.Pink)
+		toast("กำลังหาคู่ต่อสู้... กดอีกทีเพื่อยกเลิก", C.Pink)
 	end
 	paintQueue()
 end
@@ -309,14 +380,15 @@ local function openBattle(owner)
 	owner = owner or fabs.Battle
 	local leaders = Decks.Leaders or {}
 	openRadial(owner, {
-		{ Text = "👑 " .. leaderName(), Color = C.Yellow, Keep = true, OnClick = function(b)
+		{ Text = leaderName(), Color = C.Yellow, Icon = "Heart", Keep = true, OnClick = function(b)
 			if #leaders <= 1 then return end
 			leaderIndex = leaderIndex % #leaders + 1
-			b.Text = "👑 " .. leaderName()
+			local txt = b:FindFirstChildOfClass("TextLabel")
+			if txt then txt.Text = leaderName() else b.Text = leaderName() end
 		end },
-		{ Text = "🤖 ซ้อมบอท", Color = C.Lime, OnClick = function() startMode("Bot") end },
-		{ Text = queueMode == "PvP" and "❌ ยกเลิกหา" or "🌐 PvP", Color = C.Pink, OnClick = togglePvP },
-		{ Text = ("🗼 หอคอย ชั้น %d"):format(profile and profile.TowerFloor or 1), Color = C.Orange,
+		{ Text = "ซ้อมบอท", Color = C.Lime, Icon = "Play", OnClick = function() startMode("Bot") end },
+		{ Text = queueMode == "PvP" and "ยกเลิกหา" or "PvP ออนไลน์", Color = C.Pink, Icon = "Lightning", OnClick = togglePvP },
+		{ Text = ("หอคอย ชั้น %d"):format(profile and profile.TowerFloor or 1), Color = C.Orange, Icon = "Up",
 			OnClick = function() startMode("Tower") end },
 	}, 150, 125, 235) -- กางออกทางซ้ายของปุ่ม
 end
@@ -328,7 +400,7 @@ local function gachaCost(n)
 end
 
 local function showPulls(results, owner)
-	openPanel(nil, { Title = "🎉 ได้การ์ด!", Color = C.Pink, Width = 540, Build = function(p, inner)
+	openPanel(nil, { Title = "ผลการสุ่มการ์ด", Color = C.Pink, Width = 540, Build = function(p, inner)
 		local cw, ch, gap = 96, 64, 6
 		local perRow = math.max(1, math.floor((inner + gap) / (cw + gap)))
 		local rows = math.max(1, math.ceil(#results / perRow))
@@ -350,7 +422,7 @@ local function showPulls(results, owner)
 			local rar = (typeof(r) == "table" and r.Rarity) or (def and def.Rarity) or "Common"
 			local extra = ""
 			if typeof(r) == "table" then
-				if r.New then extra = "\n✨NEW!" elseif r.Refund then extra = ("\n+💎%d"):format(r.Refund) end
+				if r.New then extra = "\nNEW!" elseif r.Refund then extra = ("\n+%d เพชร"):format(r.Refund) end
 			end
 			local chip = label(grid, (def and def.Name or tostring(id)) .. extra, C.Ink)
 			chip.LayoutOrder = i
@@ -364,20 +436,20 @@ local function showPulls(results, owner)
 				end)
 			end
 		end
-		row(p, 2, "🎰 สุ่มต่อ", C.Lime, function() openGacha(owner) end, 40)
+		row(p, 2, "สุ่มต่อ", C.Lime, function() openGacha(owner) end, 40, "Chest")
 		label(p, "แตะที่ว่างเพื่อปิด", C.Gray, 18).LayoutOrder = 3
 	end })
 end
 
 local function pull(count, owner, btn)
 	if profile and (profile.Gems or 0) < gachaCost(count) then
-		toast("💎 เพชรไม่พอ!", C.Red)
+		toast("เพชรไม่พอ!", C.Red)
 		if gemsLabel then Juice.shake(gemsLabel, 14) end
 		if btn then Juice.shake(btn, 10) end
 		return
 	end
 	local oldText = btn and btn.Text
-	if btn then btn.Text = "🎲 กำลังสุ่ม..." end
+	if btn then btn.Text = "กำลังสุ่ม..." end
 	local ok, results = Net.invokeLocked("gacha", "Gacha", count)
 	if btn and btn.Parent then btn.Text = oldText end
 	if not ok then toast(Net.message(results), C.Red) return end
@@ -387,11 +459,11 @@ end
 openGacha = function(owner)
 	local anchor, offset = side(owner, false)
 	openPanel(owner, {
-		Title = "🎰 กาชาเกลือ", Color = C.Pink, Width = 270, Anchor = anchor, Offset = offset,
+		Title = "กาชา", Color = C.Pink, Width = 270, Anchor = anchor, Offset = offset,
 		Build = function(p)
-			label(p, ("มีอยู่ 💎 %d"):format(profile and profile.Gems or 0), C.White, 22).LayoutOrder = 1
-			row(p, 2, ("สุ่ม 1 ครั้ง  💎%d"):format(gachaCost(1)), C.Pink, function(b) pull(1, owner, b) end)
-			row(p, 3, ("สุ่ม 10 ครั้ง  💎%d"):format(gachaCost(10)), C.Lime, function(b) pull(10, owner, b) end)
+			label(p, ("มีอยู่ %d เพชร"):format(profile and profile.Gems or 0), C.White, 22).LayoutOrder = 1
+			row(p, 2, ("สุ่ม 1 ครั้ง  (%d เพชร)"):format(gachaCost(1)), C.Pink, function(b) pull(1, owner, b) end, nil, "Key")
+			row(p, 3, ("สุ่ม 10 ครั้ง  (%d เพชร)"):format(gachaCost(10)), C.Lime, function(b) pull(10, owner, b) end, nil, "Chest")
 		end,
 	})
 end
@@ -407,79 +479,61 @@ local function deckCount()
 end
 
 local function closeDeck(animate)
-	local d = deck
-	if not d then return end
+	local p = deck
+	if not p then return end
 	deck = nil
-	if animate then
-		Juice.tween(d.dim, 0.2, nil, nil, { BackgroundTransparency = 1 })
-		Juice.popOut(d.win, function() d.dim:Destroy() end)
-	else
-		d.dim:Destroy()
-	end
 	setModal(false)
+	if typeof(p) == "Instance" then
+		local backdrop = p:FindFirstAncestor("PanelBackdrop")
+		if backdrop then
+			backdrop:Destroy()
+		elseif p.Parent then
+			p:Destroy()
+		end
+	end
 end
 
 local function openDeckBuilder()
 	closePopup()
 	if inMatch or deck then return end
-	if not DeckBuilder then toast("🚧 ยังไม่มีระบบจัดเด็ค", C.Orange) return end
+	if not DeckBuilder then toast("ยังไม่มีระบบจัดเด็ค", C.Orange) return end
 	if not profile then toast("กำลังโหลดข้อมูล รอแป๊บนึง...", C.Orange); FloatHUD.Refresh(); return end
 
-	local dim = Instance.new("TextButton") -- พื้นหลังมืดบางๆ กันคลิกทะลุ แต่ยังเห็นโลก 3D
-	dim.Name = "DeckWindow"
-	dim.Text = ""
-	dim.AutoButtonColor = false
-	dim.BackgroundColor3 = C.Ink
-	dim.BackgroundTransparency = 0.6
-	dim.Size = UDim2.fromScale(1, 1)
-	dim.ZIndex = 20
-	dim.Parent = overlay
-
-	local win = Instance.new("Frame")
-	win.AnchorPoint = Vector2.new(0.5, 0.5)
-	win.Position = UDim2.fromScale(0.5, 0.5)
-	win.Size = UDim2.fromScale(0.82, 0.86)
-	win.BackgroundTransparency = 1
-	win.Parent = dim
-	local lim = Instance.new("UISizeConstraint")
-	lim.MaxSize = Vector2.new(920, 640)
-	lim.Parent = win
-
-	local d = { dim = dim, win = win }
-	deck = d
-	local ok, panel = pcall(DeckBuilder.Open, win, {
+	setModal(true)
+	local ok, panel = pcall(DeckBuilder.Open, overlay, {
 		Cards = CardData, Owned = profile.Collection, Deck = profile.Deck, Message = Net.message,
 		OnSave = function(ids) return Net.invoke("SaveDeck", ids) end,
-		OnClose = function() if deck == d then closeDeck(true) end end,
+		OnClose = function()
+			if deck then
+				closeDeck(false)
+			end
+		end,
 	})
-	if not ok then
+	if not ok or not panel then
 		warn("[FloatHUD] DeckBuilder.Open error: " .. tostring(panel))
 		deck = nil
-		dim:Destroy()
+		setModal(false)
 		toast("เปิดหน้าจัดเด็คไม่ได้ ลองใหม่อีกครั้ง", C.Red)
 		return
 	end
-	-- ถ้า DeckBuilder ลบ panel ตัวเอง (ปุ่มปิดของมันเอง) → ปิดหน้าต่างเราตาม
-	if typeof(panel) == "Instance" then
-		panel.Destroying:Once(function() if deck == d then closeDeck(false) end end)
-	end
-	local x = blobButton(win, "✕", C.Red, UDim2.fromOffset(46, 46), function()
-		if deck == d then closeDeck(true) end
+
+	deck = panel
+	panel.Destroying:Once(function()
+		if deck == panel then
+			deck = nil
+			setModal(false)
+		end
 	end)
-	x.Position = UDim2.new(1, -6, 0, 6)
-	x.ZIndex = 60
-	setModal(true)
-	Juice.popIn(win)
 end
 
 local function openDeck(owner)
 	local anchor, offset = side(owner, false)
 	openPanel(owner, {
-		Title = "🃏 เด็คของคุณ", Color = C.Blue, Width = 260, Anchor = anchor, Offset = offset,
+		Title = "เด็คของคุณ", Color = C.Blue, Width = 260, Anchor = anchor, Offset = offset,
 		Build = function(p)
 			label(p, ("ในเด็ค: %d ใบ"):format(deckCount()), C.White, 24).LayoutOrder = 1
-			label(p, "👑 ผู้นำ: " .. leaderName(), C.Yellow, 22).LayoutOrder = 2
-			row(p, 3, "✏️ จัดเด็ค", C.Yellow, openDeckBuilder)
+			label(p, "ผู้นำ: " .. leaderName(), C.Yellow, 22).LayoutOrder = 2
+			row(p, 3, "จัดเด็ค", C.Yellow, openDeckBuilder, nil, "Sort")
 		end,
 	})
 end
@@ -533,9 +587,9 @@ local function questItem(parent, q, i)
 	holder.Size = UDim2.new(0.36, -8, 0, 40)
 	holder.Parent = f
 	local text, color
-	if q.Claimed then text, color = "✅ รับแล้ว", C.Gray
-	elseif done then text, color = ("รับ 💎%d"):format(q.Reward or 0), C.Lime
-	else text, color = ("💎%d"):format(q.Reward or 0), C.Gray end
+	if q.Claimed then text, color = "รับแล้ว", C.Gray
+	elseif done then text, color = ("รับ %d เพชร"):format(q.Reward or 0), C.Lime
+	else text, color = ("%d เพชร"):format(q.Reward or 0), C.Gray end
 	local b
 	b = blobButton(holder, text, color, UDim2.fromScale(1, 1), function()
 		if q.Claimed or not done then Juice.shake(b, 8) return end
@@ -543,8 +597,8 @@ local function questItem(parent, q, i)
 		if not ok then toast(Net.message(res), C.Red) return end
 		q.Claimed = true
 		Juice.unwobble(b)
-		b.Text, b.BackgroundColor3 = "✅ รับแล้ว", C.Gray
-		Juice.burstOn(b, ("+%d 💎"):format(tonumber(res) or q.Reward or 0), C.Yellow)
+		b.Text, b.BackgroundColor3 = "รับแล้ว", C.Gray
+		Juice.burstOn(b, ("+%d เพชร"):format(tonumber(res) or q.Reward or 0), C.Yellow)
 		FloatHUD.Refresh()
 	end)
 	b.Position = UDim2.fromScale(0.5, 0.5)
@@ -555,7 +609,7 @@ openQuests = function(owner)
 	local list, resetIn = questList()
 	local anchor, offset = side(owner, true)
 	openPanel(owner, {
-		Title = "📜 เควสต์รายวัน", Color = C.Lime, Width = 400, Anchor = anchor, Offset = offset,
+		Title = "เควสต์รายวัน", Color = C.Lime, Width = 400, Anchor = anchor, Offset = offset,
 		Build = function(p)
 			if #list == 0 then
 				label(p, "ยังไม่มีเควสต์ ลองใหม่อีกทีนะ", C.Gray, 24).LayoutOrder = 1
@@ -564,7 +618,7 @@ openQuests = function(owner)
 				for i, q in list do questItem(sf, q, i) end
 			end
 			if resetIn and resetIn > 0 then
-				label(p, ("🔄 รีเซ็ตใน %d ชม. %d นาที"):format(resetIn // 3600, (resetIn % 3600) // 60), C.Gray, 20).LayoutOrder = 2
+				label(p, ("รีเซ็ตใน %d ชม. %d นาที"):format(resetIn // 3600, (resetIn % 3600) // 60), C.Gray, 20).LayoutOrder = 2
 			end
 		end,
 	})
@@ -580,18 +634,18 @@ openStats = function(owner)
 	local D = typeof(T.Derived) == "table" and T.Derived or {}
 	local Td = typeof(snap.Today) == "table" and snap.Today or {}
 	local lines = {
-		{ "🎮 เล่นทั้งหมด", tostring(T.Matches or 0) },
-		{ "🏆 ชนะ / 💀 แพ้", ("%d / %d"):format(T.Wins or 0, T.Losses or 0) },
-		{ "📈 อัตราชนะ", pct(D.WinRate) },
-		{ "🌐 PvP / 🤖 บอท", pct(D.WinRatePvP) .. " / " .. pct(D.WinRateBot) },
-		{ "🔥 ชนะติด (สูงสุด)", ("%d (%d)"):format(tonumber(snap.Streak) or 0, tonumber(snap.BestStreak) or 0) },
-		{ "🃏 การ์ดต่อเกม", tostring(D.CardsPerMatch or 0) },
-		{ "🌟 ร่างทอง / 💩 อึ", pct(D.GoldenRate) .. " / " .. pct(D.PoopRate) },
-		{ "📅 วันนี้ เล่น / ชนะ", ("%d / %d"):format(Td.Matches or 0, Td.Wins or 0) },
+		{ "เล่นทั้งหมด", tostring(T.Matches or 0) },
+		{ "ชนะ / แพ้", ("%d / %d"):format(T.Wins or 0, T.Losses or 0) },
+		{ "อัตราชนะ", pct(D.WinRate) },
+		{ "PvP / บอท", pct(D.WinRatePvP) .. " / " .. pct(D.WinRateBot) },
+		{ "ชนะติด (สูงสุด)", ("%d (%d)"):format(tonumber(snap.Streak) or 0, tonumber(snap.BestStreak) or 0) },
+		{ "การ์ดต่อเกม", tostring(D.CardsPerMatch or 0) },
+		{ "ร่างทอง / อึ", pct(D.GoldenRate) .. " / " .. pct(D.PoopRate) },
+		{ "วันนี้ เล่น / ชนะ", ("%d / %d"):format(Td.Matches or 0, Td.Wins or 0) },
 	}
 	local anchor, offset = side(owner, true)
 	openPanel(owner, {
-		Title = "📊 สถิติของคุณ", Color = C.Blue, Width = 380, Anchor = anchor, Offset = offset,
+		Title = "สถิติของคุณ", Color = C.Blue, Width = 380, Anchor = anchor, Offset = offset,
 		Build = function(p)
 			local sf = scrollList(p, 1, 32, #lines)
 			for i, ln in lines do
@@ -641,8 +695,8 @@ local function farmItem(parent, f, i, now, owner)
 	local rate, cap = tonumber(f.Rate) or 0, tonumber(f.Cap) or 0
 	local last = tonumber(f.LastClaim) or now
 	local stored = math.min(cap, math.floor(math.max(0, now - last) / 60 * rate))
-	local info = label(box, ("%s %s Lv.%d\n💎 %d/%d  (+%s/นาที)"):format(
-		f.Emoji or "🌾", tostring(f.Name or f.Id), f.Level or 1, stored, cap, ("%g"):format(rate)), C.White)
+	local info = label(box, ("%s Lv.%d\n%d/%d  (+%s/นาที)"):format(
+		tostring(f.Name or f.Id), f.Level or 1, stored, cap, ("%g"):format(rate)), C.White)
 	info.Position = UDim2.fromOffset(10, 4)
 	info.Size = UDim2.new(0.52, -10, 1, -8)
 	info.TextXAlignment = Enum.TextXAlignment.Left
@@ -651,7 +705,7 @@ local function farmItem(parent, f, i, now, owner)
 	claim = farmButton(box, 0.53, "เก็บ", stored > 0 and C.Lime or C.Gray, function()
 		local ok, res = Net.invokeLocked("farm", "ClaimFarm", f.Id)
 		if not ok then toast(Net.message(res), C.Red); Juice.shake(claim, 10) return end
-		Juice.burstOn(claim, ("+%d 💎"):format(tonumber(res) or stored), C.Yellow)
+		Juice.burstOn(claim, ("+%d เพชร"):format(tonumber(res) or stored), C.Yellow)
 		local panel = farmPanel
 		task.delay(0.35, function() if openPopup == panel then openFarms(owner) end end)
 	end)
@@ -659,10 +713,10 @@ local function farmItem(parent, f, i, now, owner)
 
 	if f.UpgradeCost then
 		local up
-		up = farmButton(box, 0.765, ("⬆💎%d"):format(f.UpgradeCost), C.Yellow, function()
+		up = farmButton(box, 0.765, ("อัป %d"):format(f.UpgradeCost), C.Yellow, function()
 			local ok, res = Net.invokeLocked("farm", "UpgradeFarm", f.Id)
 			if not ok then toast(Net.message(res), C.Red); Juice.shake(up, 10) return end
-			Juice.burstOn(up, "⬆ อัปแล้ว!", C.Lime)
+			Juice.burstOn(up, "อัปแล้ว!", C.Lime)
 			local panel = farmPanel
 			task.delay(0.35, function() if openPopup == panel then openFarms(owner) end end)
 		end)
@@ -677,7 +731,7 @@ openFarms = function(owner)
 	now = tonumber(now) or workspace:GetServerTimeNow()
 	local anchor, offset = side(owner, true)
 	farmPanel = openPanel(owner, {
-		Title = "🌾 ฟาร์มเพชร", Color = C.Orange, Width = 440, Anchor = anchor, Offset = offset,
+		Title = "ฟาร์มเพชร", Color = C.Orange, Width = 440, Anchor = anchor, Offset = offset,
 		Build = function(p)
 			if #list == 0 then
 				label(p, "ยังไม่มีฟาร์ม", C.Gray, 24).LayoutOrder = 1
@@ -690,7 +744,7 @@ openFarms = function(owner)
 	})
 end
 
--- ===== ☰ เมนู =====
+-- ===== เมนู =====
 function FloatHUD.AddMenuItem(text, color, fn)
 	table.insert(extras, { Text = text, Color = color or C.Lime, OnClick = fn })
 end
@@ -698,14 +752,21 @@ local function openMore(owner)
 	local nq = claimableCount()
 	local anchor, offset = side(owner, true)
 	openPanel(owner, {
-		Title = "☰ เมนู", Color = C.Purple, Width = 250, Anchor = anchor, Offset = offset,
+		Title = "เมนู", Color = C.Purple, Width = 260, Anchor = anchor, Offset = offset,
 		Build = function(p)
-			local qb = row(p, 1, nq > 0 and ("📜 เควสต์ (%d!)"):format(nq) or "📜 เควสต์", C.Lime, function() openQuests(owner) end)
+			local qb = row(p, 1, nq > 0 and ("เควสต์ (%d!)"):format(nq) or "เควสต์", C.Lime, function() openQuests(owner) end, nil, "Chest")
 			if nq > 0 then Juice.wobble(qb, { Amp = 0, Rot = 4, Speed = 5 }) end
-			row(p, 2, "📊 สถิติ", C.Blue, function() openStats(owner) end)
-			row(p, 3, "🌾 ฟาร์มเพชร", C.Orange, function() openFarms(owner) end)
+			row(p, 2, "สถิติ", C.Blue, function() openStats(owner) end, nil, "Up")
+			row(p, 3, "ฟาร์มเพชร", C.Orange, function() openFarms(owner) end, nil, "Coin")
+			row(p, 4, "ท่าเต้น (200+)", C.Pink, function()
+				closePopup()
+				local DanceEmoteUI = script.Parent:FindFirstChild("DanceEmoteUI")
+				if DanceEmoteUI then
+					pcall(function() require(DanceEmoteUI).Open() end)
+				end
+			end, nil, "Play")
 			for i, it in extras do
-				row(p, 10 + i, it.Text, it.Color, function() closePopup(); it.OnClick() end)
+				row(p, 10 + i, it.Text, it.Color, function() closePopup(); it.OnClick() end, nil, it.Icon or "Panel")
 			end
 		end,
 	})
@@ -725,11 +786,23 @@ local function makeFab(id, icon, tag, color, pos, size, onClick)
 	b.Parent = hud
 	corner(b); stroke(b, C.Ink, 4)
 
-	local ic = label(b, icon, C.White)
-	ic.Name = "Icon"
-	ic.AnchorPoint = Vector2.new(0.5, 0.5)
-	ic.Position = UDim2.fromScale(0.5, 0.45)
-	ic.Size = UDim2.fromScale(0.62, 0.62)
+	local ic
+	if typeof(icon) == "string" and Icons.has(icon) then
+		ic = Icons.image(icon, {
+			Name = "Icon",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.44),
+			Size = UDim2.fromScale(0.66, 0.66),
+			ZIndex = 7,
+		}, b)
+	else
+		ic = label(b, icon, C.White)
+		ic.Name = "Icon"
+		ic.AnchorPoint = Vector2.new(0.5, 0.5)
+		ic.Position = UDim2.fromScale(0.5, 0.45)
+		ic.Size = UDim2.fromScale(0.62, 0.62)
+		ic.ZIndex = 7
+	end
 
 	local tg = label(b, tag, C.White)
 	tg.Name = "Tag"
@@ -761,7 +834,7 @@ local function makeBadge(fab)
 	bd.TextColor3 = C.White
 	bd.Text = "!"
 	bd.Visible = false
-	bd.ZIndex = 3
+	bd.ZIndex = 8
 	bd.Parent = fab
 	corner(bd); stroke(bd, C.Ink, 2)
 	return bd
@@ -773,7 +846,10 @@ local function applyProfile(snap)
 	local old = profile and profile.Gems
 	profile = snap
 	if gemsLabel then
-		gemsLabel.Text = ("💎 %d"):format(snap.Gems or 0)
+		local txt = gemsLabel:FindFirstChild("GemsText")
+		if txt and txt:IsA("TextLabel") then
+			txt.Text = ("%d"):format(snap.Gems or 0)
+		end
 		if old and old ~= snap.Gems then Juice.squish(gemsLabel) end
 	end
 	if moreBadge then
@@ -786,6 +862,12 @@ end
 local function refreshProfile()
 	local snap = Net.invoke("GetProfile")
 	if typeof(snap) == "table" then applyProfile(snap) return true end
+	if gemsLabel and not profile then
+		local txt = gemsLabel:FindFirstChild("GemsText")
+		if txt and txt:IsA("TextLabel") and txt.Text == "..." then
+			txt.Text = "0"
+		end
+	end
 	return false
 end
 
@@ -793,6 +875,8 @@ end
 function FloatHUD.Build(hudGui, overlayGui, callbacks)
 	hud, overlay, cb = hudGui, overlayGui, callbacks or {}
 	for _, ch in hud:GetChildren() do ch:Destroy() end
+
+	pcall(function() hud.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 
 	catcher = Instance.new("TextButton")
 	catcher.Name = "ClickAway"
@@ -805,39 +889,84 @@ function FloatHUD.Build(hudGui, overlayGui, callbacks)
 	catcher.Parent = hud
 	catcher.Activated:Connect(closePopup)
 
-	gemsLabel = label(hud, "💎 ...", C.White, 40)
+	gemsLabel = Instance.new("Frame")
+	gemsLabel.Name = "GemsBar"
 	gemsLabel.BackgroundTransparency = 0
 	gemsLabel.BackgroundColor3 = C.Ink
 	gemsLabel.AnchorPoint = Vector2.new(0.5, 0)
 	gemsLabel.Position = UDim2.new(0.5, 0, 0, 12)
-	gemsLabel.Size = UDim2.fromOffset(170, 40)
+	gemsLabel.Size = UDim2.fromOffset(150, 38)
 	gemsLabel.ZIndex = 6
+	gemsLabel.Parent = hud
 	corner(gemsLabel, UDim.new(0, 12)); stroke(gemsLabel, C.Yellow, 3)
+
+	Icons.image("Coins", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 8, 0.5, 0),
+		Size = UDim2.fromOffset(24, 24),
+		ZIndex = 7,
+	}, gemsLabel)
+
+	local txt = label(gemsLabel, "...", C.White, 28)
+	txt.Name = "GemsText"
+	txt.Position = UDim2.new(0, 36, 0, 0)
+	txt.Size = UDim2.new(1, -42, 1, 0)
+	txt.TextXAlignment = Enum.TextXAlignment.Center
+	txt.ZIndex = 7
 	Juice.wobble(gemsLabel, { Amp = 2, Rot = 2, Speed = 1.2 })
 
 	-- ขวา: สู้/เมนู   ซ้าย: เด็ค/กาชา   (เลี่ยงมุมล่างที่เป็นจอยสติ๊ก/ปุ่มกระโดดบนมือถือ)
-	-- ตำแหน่งเป็นพิกเซลคงที่ เรียงลงมาจากมุมบนของแต่ละฝั่ง (ไม่ใช้สัดส่วนความสูงจอ) เพื่อไม่ให้ปุ่ม/ป้ายซ้อนกันเมื่อ viewport เตี้ย
-	-- แต่ละปุ่มกินที่: วงกลม + ป้ายชื่อใต้วงกลม + ช่องว่าง   จอเตี้ยมาก → ย่อปุ่มลงตามสัดส่วน ไม่ให้ล้นขอบล่าง
-	local TOP, GAP, TAG = 96, 14, 28   -- TOP เว้นแถบ Roblox + ป้ายเพชรกลางจอ
-	local H = hud.AbsoluteSize.Y
-	local avail = (H > 0 and H or 720) - TOP - 12
-	local function need(a, b) return a + b + TAG * 2 + GAP end
-	local k = math.clamp(avail / need(64, 96), 0.55, 1)      -- คอลัมน์ขวา: เมนู + สู้!
-	local kl = math.clamp(avail / need(76, 76), 0.55, 1)     -- คอลัมน์ซ้าย: เด็ค + กาชา
-	local moreSize, battleSize = math.floor(64 * k), math.floor(96 * k)
-	local deckSize, gachaSize = math.floor(76 * kl), math.floor(76 * kl)
-	local moreY = TOP + moreSize / 2
-	local battleY = moreY + moreSize / 2 + TAG + GAP + battleSize / 2
-	local deckY = TOP + deckSize / 2
-	local gachaY = deckY + deckSize / 2 + TAG + GAP + gachaSize / 2
-	local more = makeFab("More", "☰", "เมนู", C.Purple, UDim2.new(1, -64, 0, moreY), moreSize, openMore)
-	makeFab("Battle", "⚔️", "สู้!", C.Red, UDim2.new(1, -72, 0, battleY), battleSize, openBattle)
-	makeFab("Deck", "🃏", "เด็ค", C.Blue, UDim2.new(0, 64, 0, deckY), deckSize, openDeck)
-	makeFab("Gacha", "🎰", "กาชา", C.Pink, UDim2.new(0, 64, 0, gachaY), gachaSize, openGacha)
+	local function layoutFabs()
+		local TOP, GAP, TAG = 96, 14, 28
+		local screen = hud.AbsoluteSize
+		local W = (screen.X > 0 and screen.X or 1024)
+		local H = (screen.Y > 0 and screen.Y or 720)
+		local avail = H - TOP - 16
+		local function need(a, b) return a + b + TAG * 2 + GAP end
+		local k = math.clamp(avail / need(64, 96), 0.5, 1)
+		local kl = math.clamp(avail / need(76, 76), 0.5, 1)
+
+		local moreSize, battleSize = math.floor(64 * k), math.floor(96 * k)
+		local deckSize, gachaSize = math.floor(76 * kl), math.floor(76 * kl)
+
+		local moreY = TOP + moreSize / 2
+		local battleY = moreY + moreSize / 2 + TAG + GAP + battleSize / 2
+		local deckY = TOP + deckSize / 2
+		local gachaY = deckY + deckSize / 2 + TAG + GAP + gachaSize / 2
+
+		local sideMargin = math.clamp(math.floor(W * 0.05), 48, 80)
+
+		if fabs.More then
+			fabs.More.Size = UDim2.fromOffset(moreSize, moreSize)
+			Juice.setBase(fabs.More, UDim2.new(1, -sideMargin, 0, moreY))
+		end
+		if fabs.Battle then
+			fabs.Battle.Size = UDim2.fromOffset(battleSize, battleSize)
+			Juice.setBase(fabs.Battle, UDim2.new(1, -(sideMargin + 8), 0, battleY))
+		end
+		if fabs.Deck then
+			fabs.Deck.Size = UDim2.fromOffset(deckSize, deckSize)
+			Juice.setBase(fabs.Deck, UDim2.new(0, sideMargin, 0, deckY))
+		end
+		if fabs.Gacha then
+			fabs.Gacha.Size = UDim2.fromOffset(gachaSize, gachaSize)
+			Juice.setBase(fabs.Gacha, UDim2.new(0, sideMargin, 0, gachaY))
+		end
+	end
+
+	local more = makeFab("More", "Panel", "เมนู", C.Purple, UDim2.new(1, -64, 0, 128), 64, openMore)
+	makeFab("Battle", "Play", "สู้!", C.Red, UDim2.new(1, -72, 0, 240), 96, openBattle)
+	makeFab("Deck", "Sort", "เด็ค", C.Blue, UDim2.new(0, 64, 0, 134), 76, openDeck)
+	makeFab("Gacha", "Chest", "กาชา", C.Pink, UDim2.new(0, 64, 0, 246), 76, openGacha)
 	moreBadge = makeBadge(more)
 
+	layoutFabs()
+
 	Net.on("ProfileChanged", applyProfile)
-	hud:GetPropertyChangedSignal("AbsoluteSize"):Connect(closePopup) -- หมุนจอ/ย่อหน้าต่าง → ปิด popup ที่ตำแหน่งเพี้ยน
+	hud:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		closePopup()
+		layoutFabs()
+	end)
 	FloatHUD.Refresh()
 end
 
@@ -852,6 +981,11 @@ function FloatHUD.Action(action)
 	elseif action == "Quests" then openQuests(nil)
 	elseif action == "Stats" then openStats(nil)
 	elseif action == "Farm" then openFarms(nil)
+	elseif action == "Emote" or action == "Dance" then
+		local DanceEmoteUI = script.Parent:FindFirstChild("DanceEmoteUI")
+		if DanceEmoteUI then
+			pcall(function() require(DanceEmoteUI).Toggle() end)
+		end
 	end
 end
 

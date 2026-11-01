@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local UIKit = require(Shared.UI.UIKit)
 local FX = require(Shared.UI.FX)
+local Icons = require(Shared.UI.Icons)
 
 local Theme = UIKit.Theme
 local C, CENTER = Theme.Color, UIKit.CENTER
@@ -16,13 +17,13 @@ local function now() return workspace:GetServerTimeNow() end
 local function sample()
 	local t = now()
 	return {
-		{ Id = "GlueGarden", Name = "สวนกาว", Emoji = "🌻", Color = C.Lime, Rate = 6, Cap = 120, LastClaim = t - 600, Level = 1 },
-		{ Id = "GemMine", Name = "เหมืองเจม", Emoji = "💎", Color = C.Blue, Rate = 1, Cap = 20, LastClaim = t - 900, Level = 1 },
-		{ Id = "MemePond", Name = "บ่อเลี้ยงมีม", Emoji = "🐸", Color = C.Pink, Rate = 3, Cap = 60, LastClaim = t - 300, Level = 1 },
+		{ Id = "GlueGarden", Name = "สวนกาว", Icon = "Chest", Color = C.Lime, Rate = 6, Cap = 120, LastClaim = t - 600, Level = 1 },
+		{ Id = "GemMine", Name = "เหมืองเจม", Icon = "Coins", Color = C.Blue, Rate = 1, Cap = 20, LastClaim = t - 900, Level = 1 },
+		{ Id = "MemePond", Name = "บ่อเลี้ยงมีม", Icon = "Play", Color = C.Pink, Rate = 3, Cap = 60, LastClaim = t - 300, Level = 1 },
 	}
 end
 
-local function fly(panel, emoji, fromGui, toGui, n)
+local function fly(panel, iconName, fromGui, toGui, n)
 	local pa, ps = panel.AbsolutePosition, panel.AbsoluteSize
 	local function rel(g)
 		local c = g.AbsolutePosition + g.AbsoluteSize / 2 - pa
@@ -31,8 +32,24 @@ local function fly(panel, emoji, fromGui, toGui, n)
 	local a, b = rel(fromGui), rel(toGui)
 	for i = 1, n do
 		task.delay(i * 0.04, function()
-			local l = UIKit.new("TextLabel", { BackgroundTransparency = 1, Text = emoji, TextScaled = true, Size = UDim2.fromOffset(34, 34),
-				AnchorPoint = CENTER, Position = a, ZIndex = 90, Parent = panel })
+			local l
+			if iconName and Icons.has(iconName) then
+				l = Icons.image(iconName, {
+					Size = UDim2.fromOffset(26, 26),
+					AnchorPoint = CENTER,
+					Position = a,
+					ZIndex = 90,
+				}, panel)
+			else
+				l = UIKit.new("Frame", {
+					BackgroundColor3 = Theme.Color.Yellow,
+					Size = UDim2.fromOffset(18, 18),
+					AnchorPoint = CENTER,
+					Position = a,
+					ZIndex = 90,
+					Parent = panel,
+				}, { UIKit.corner(UDim.new(1, 0)) })
+			end
 			local mid = a:Lerp(b, 0.5) + UDim2.fromScale((math.random() - 0.5) * 0.3, -0.2)
 			UIKit.tween(l, 0.25, { Position = mid })
 			task.delay(UIKit.dur(0.25), function()
@@ -49,9 +66,9 @@ end
 function FarmUI.Open(parent, opts)
 	opts = opts or {}
 	local farms = opts.Farms or sample()
-	local wallet, wEmoji = opts.Wallet or 0, opts.WalletEmoji or "🪙"
+	local wallet = opts.Wallet or 0
 	local panel = UIKit.panel(parent, "ฟาร์มชิลๆ", C.Green)
-	local walletBadge, walletLbl = UIKit.badge(panel, wEmoji .. " " .. wallet, C.Yellow, { Size = UDim2.fromOffset(190, 42),
+	local walletBadge, walletLbl = UIKit.badge(panel, "เหรียญ " .. wallet, C.Yellow, { Size = UDim2.fromOffset(190, 42),
 		Position = UDim2.new(0, 22, 0, 52), Tilt = -3, MaxTextSize = 26, ZIndex = 60 })
 
 	local row = UIKit.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -40, 1, -130), Position = UDim2.new(0, 20, 0, 110), Parent = panel }, {
@@ -65,8 +82,18 @@ function FarmUI.Open(parent, opts)
 		local z = face.ZIndex
 		UIKit.new("Frame", { BackgroundColor3 = f.Color or C.Lime, BorderSizePixel = 0, Size = UDim2.fromScale(1, 0.45), ZIndex = z, Parent = face },
 			{ UIKit.corner(Theme.Radius) })
-		local icon = UIKit.label({ Text = f.Emoji or "🌱", StrokeThickness = 0, Size = UDim2.fromScale(0.5, 0.3), Position = UDim2.fromScale(0.5, 0.06),
-			AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 90, ZIndex = z + 1, Parent = face })
+		local icon
+		if f.Icon and Icons.has(f.Icon) then
+			icon = Icons.image(f.Icon, {
+				Size = UDim2.fromScale(0.4, 0.3),
+				Position = UDim2.fromScale(0.5, 0.08),
+				AnchorPoint = Vector2.new(0.5, 0),
+				ZIndex = z + 1,
+			}, face)
+		else
+			icon = UIKit.label({ Text = f.Name or "★", StrokeThickness = 0, Size = UDim2.fromScale(0.5, 0.3), Position = UDim2.fromScale(0.5, 0.06),
+				AnchorPoint = Vector2.new(0.5, 0), MaxTextSize = 90, ZIndex = z + 1, Parent = face })
+		end
 		TweenService:Create(icon, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
 			{ Rotation = 8, Position = icon.Position - UDim2.fromScale(0, 0.02) }):Play()
 		UIKit.label({ Text = f.Name, Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.5, 0.47), AnchorPoint = Vector2.new(0.5, 0),
@@ -93,9 +120,9 @@ function FarmUI.Open(parent, opts)
 				if not ok then UIKit.toast(tostring(amount or "เก็บไม่ได้ ลองใหม่"), C.Red) return end
 				amount = tonumber(amount) or 0
 				f.LastClaim = now()
-				fly(panel, f.Emoji or wEmoji, v.claim, walletBadge, math.clamp(amount, 3, 12))
+				fly(panel, f.Icon or "Coins", v.claim, walletBadge, math.clamp(amount, 3, 12))
 				task.delay(UIKit.dur(0.45), function()
-					UIKit.countTo(walletLbl, wallet, wallet + amount, 0.6, wEmoji .. " %d")
+					UIKit.countTo(walletLbl, wallet, wallet + amount, 0.6, "เหรียญ %d")
 					wallet += amount
 				end)
 				FX.sparkles(holder, f.Color or C.Lime, 10)

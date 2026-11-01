@@ -14,6 +14,8 @@ local Rules = require(Shared:WaitForChild("Rules"))
 local CardData = require(Shared:WaitForChild("CardData"))
 local Net = require(script.Parent:WaitForChild("Net"))
 local Perf = require(Shared:WaitForChild("UI"):WaitForChild("Perf"))
+local Icons = require(Shared:WaitForChild("UI"):WaitForChild("Icons"))
+local Inspect = require(script.Parent:WaitForChild("Inspect"))
 local Juice do local m = script.Parent:FindFirstChild("Juice"); if m then local ok, r = pcall(require, m); if ok then Juice = r end end end
 
 local MatchUI = {}
@@ -171,6 +173,7 @@ end
 function MatchUI.Build(gui, overlay, cb)
 	cb = cb or {}
 	pcall(function() gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling end)
+	pcall(function() gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 	gui.Enabled = true
 
 	local state, sel = nil, nil
@@ -198,10 +201,10 @@ function MatchUI.Build(gui, overlay, cb)
 		local row = new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromScale(0.02, 0.1), Size = UDim2.fromScale(0.96, 0.84) }, z)
 		new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0.015, 0), SortOrder = Enum.SortOrder.LayoutOrder }, row)
-		return row
+		return row, z
 	end
-	local oppRow = zone(C.OppZone, UDim2.fromScale(0.015, 0.13), "สนามศัตรู")
-	local myRow = zone(C.MyZone, UDim2.fromScale(0.015, 0.465), "สนามเรา")
+	local oppRow, oppZoneFrame = zone(C.OppZone, UDim2.fromScale(0.015, 0.13), "สนามศัตรู")
+	local myRow, myZoneFrame = zone(C.MyZone, UDim2.fromScale(0.015, 0.465), "สนามเรา")
 
 	-- แถบกลาง
 	local mid = new("Frame", { BackgroundColor3 = C.Paper, Position = UDim2.fromScale(0.015, 0.405), Size = UDim2.fromScale(0.71, 0.055) }, root)
@@ -223,7 +226,13 @@ function MatchUI.Build(gui, overlay, cb)
 		corner(barBg, 8); outline(barBg, 3)
 		local bar = new("Frame", { BackgroundColor3 = C.Green, Size = UDim2.fromScale(1, 1) }, barBg)
 		corner(bar, 8)
-		local hp = text(barBg, { Font = FONT_NUM, TextColor3 = C.White })
+		Icons.image("Heart", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 4, 0.5, 0),
+			Size = UDim2.fromOffset(16, 16),
+			ZIndex = 4,
+		}, barBg)
+		local hp = text(barBg, { Font = FONT_NUM, TextColor3 = C.White, Position = UDim2.new(0, 20, 0, 0), Size = UDim2.new(1, -22, 1, 0) })
 		textStroke(hp, 2)
 		local sub = maxText(text(b, { Font = FONT_BODY, Position = UDim2.fromScale(0.28, 0.72), Size = UDim2.fromScale(0.7, 0.24),
 			TextXAlignment = Enum.TextXAlignment.Left }), 16)
@@ -265,17 +274,151 @@ function MatchUI.Build(gui, overlay, cb)
 	local controls = new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromScale(0.77, 0.75), Size = UDim2.fromScale(0.215, 0.235) }, root)
 	local ptsBox = new("Frame", { BackgroundColor3 = C.Yellow, Size = UDim2.fromScale(1, 0.34) }, controls)
 	corner(ptsBox, 16); outline(ptsBox, 4)
-	local ptsLbl = text(ptsBox, { Font = FONT_NUM, Position = UDim2.fromScale(0.05, 0.02), Size = UDim2.fromScale(0.9, 0.62) })
-	local ptsSub = maxText(text(ptsBox, { Font = FONT_BODY, Position = UDim2.fromScale(0.05, 0.64), Size = UDim2.fromScale(0.9, 0.32) }), 14)
-	local endBtn = chunkyButton(controls, "⏳", C.Gray)
+	Icons.image("Lightning", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 6, 0.5, 0),
+		Size = UDim2.fromOffset(22, 22),
+		ZIndex = 4,
+	}, ptsBox)
+	local ptsLbl = text(ptsBox, { Font = FONT_NUM, Position = UDim2.new(0, 28, 0.02, 0), Size = UDim2.new(1, -32, 0.62, 0) })
+	local ptsSub = maxText(text(ptsBox, { Font = FONT_BODY, Position = UDim2.new(0, 28, 0.64, 0), Size = UDim2.new(1, -32, 0.32, 0) }), 14)
+	local endBtn = chunkyButton(controls, "รอศัตรู...", C.Gray)
 	endBtn.Position = UDim2.fromScale(0, 0.38); endBtn.Size = UDim2.fromScale(1, 0.4)
-	local surrBtn = chunkyButton(controls, "🏳️ ยอมแพ้", rgb(255, 150, 160))
-	surrBtn.Position = UDim2.fromScale(0, 0.82); surrBtn.Size = UDim2.fromScale(1, 0.18)
+	Icons.image("Checkmark", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 8, 0.5, 0),
+		Size = UDim2.fromOffset(20, 20),
+		ZIndex = 5,
+	}, endBtn)
+
+	local surrBtn = chunkyButton(controls, "ยอมแพ้", rgb(255, 150, 160))
+	surrBtn.Position = UDim2.fromScale(0, 0.81); surrBtn.Size = UDim2.fromScale(1, 0.19)
+	Icons.image("Close", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 8, 0.5, 0),
+		Size = UDim2.fromOffset(16, 16),
+		ZIndex = 5,
+	}, surrBtn)
 
 	local actionBar = new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.fromScale(0.37, 0.748), Size = UDim2.fromScale(0.5, 0.06), Visible = false, ZIndex = 20 }, root)
+		Position = UDim2.new(0.37, 0, 0.74, -8), Size = UDim2.fromScale(0.5, 0.06), Visible = false, ZIndex = 20 }, root)
 	new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		Padding = UDim.new(0.02, 0), SortOrder = Enum.SortOrder.LayoutOrder }, actionBar)
+
+	local function updateLayout()
+		local size = root.AbsoluteSize
+		local W = (size and size.X > 0) and size.X or 1024
+		local H = (size and size.Y > 0) and size.Y or 720
+		local isPortrait = (W < H) or (W < 700)
+		local isMobileLandscape = not isPortrait and (H < 520)
+
+		if isPortrait then
+			oppZoneFrame.Position = UDim2.fromScale(0.015, 0.11)
+			oppZoneFrame.Size = UDim2.fromScale(0.97, 0.235)
+
+			mid.Position = UDim2.fromScale(0.015, 0.35)
+			mid.Size = UDim2.fromScale(0.97, 0.045)
+
+			myZoneFrame.Position = UDim2.fromScale(0.015, 0.40)
+			myZoneFrame.Size = UDim2.fromScale(0.97, 0.235)
+
+			info.Visible = false
+			logBox.Visible = false
+
+			myL.btn.Position = UDim2.fromScale(0.015, 0.645)
+			myL.btn.Size = UDim2.fromScale(0.33, 0.135)
+
+			controls.Position = UDim2.fromScale(0.36, 0.645)
+			controls.Size = UDim2.fromScale(0.625, 0.135)
+
+			ptsBox.Position = UDim2.fromScale(0, 0)
+			ptsBox.Size = UDim2.fromScale(0.44, 1)
+
+			endBtn.Position = UDim2.fromScale(0.46, 0)
+			endBtn.Size = UDim2.fromScale(0.54, 0.58)
+
+			surrBtn.Position = UDim2.fromScale(0.46, 0.62)
+			surrBtn.Size = UDim2.fromScale(0.54, 0.38)
+
+			hand.Position = UDim2.fromScale(0.015, 0.79)
+			hand.Size = UDim2.fromScale(0.97, 0.195)
+
+			actionBar.Position = UDim2.new(0.5, 0, 0.79, -8)
+		elseif isMobileLandscape then
+			-- Mobile Landscape Viewport: expand battlefield & cards, dock controls on right with full height
+			oppZoneFrame.Position = UDim2.fromScale(0.015, 0.12)
+			oppZoneFrame.Size = UDim2.fromScale(0.79, 0.27)
+
+			mid.Position = UDim2.fromScale(0.015, 0.40)
+			mid.Size = UDim2.fromScale(0.79, 0.055)
+
+			myZoneFrame.Position = UDim2.fromScale(0.015, 0.465)
+			myZoneFrame.Size = UDim2.fromScale(0.79, 0.27)
+
+			info.Visible = false
+			logBox.Visible = false
+
+			myL.btn.Position = UDim2.fromScale(0.015, 0.75)
+			myL.btn.Size = UDim2.fromScale(0.18, 0.235)
+
+			hand.Position = UDim2.fromScale(0.205, 0.75)
+			hand.Size = UDim2.fromScale(0.60, 0.235)
+
+			controls.Position = UDim2.fromScale(0.815, 0.12)
+			controls.Size = UDim2.fromScale(0.17, 0.865)
+
+			ptsBox.Position = UDim2.new(0, 0, 0, 0)
+			ptsBox.Size = UDim2.new(1, 0, 0, 48)
+
+			endBtn.Position = UDim2.new(0, 0, 0, 56)
+			endBtn.Size = UDim2.new(1, 0, 0, 50)
+
+			surrBtn.Position = UDim2.new(0, 0, 0, 114)
+			surrBtn.Size = UDim2.new(1, 0, 0, 42)
+
+			actionBar.Position = UDim2.new(0.40, 0, 0.74, -8)
+		else
+			oppZoneFrame.Position = UDim2.fromScale(0.015, 0.13)
+			oppZoneFrame.Size = UDim2.fromScale(0.71, 0.27)
+
+			mid.Position = UDim2.fromScale(0.015, 0.405)
+			mid.Size = UDim2.fromScale(0.71, 0.055)
+
+			myZoneFrame.Position = UDim2.fromScale(0.015, 0.465)
+			myZoneFrame.Size = UDim2.fromScale(0.71, 0.27)
+
+			info.Visible = true
+			logBox.Visible = true
+			info.Position = UDim2.fromScale(0.735, 0.13)
+			info.Size = UDim2.fromScale(0.25, 0.39)
+			logBox.Position = UDim2.fromScale(0.735, 0.53)
+			logBox.Size = UDim2.fromScale(0.25, 0.205)
+
+			myL.btn.Position = UDim2.fromScale(0.015, 0.75)
+			myL.btn.Size = UDim2.fromScale(0.18, 0.235)
+
+			hand.Position = UDim2.fromScale(0.205, 0.755)
+			hand.Size = UDim2.fromScale(0.555, 0.23)
+
+			controls.Position = UDim2.fromScale(0.77, 0.75)
+			controls.Size = UDim2.fromScale(0.215, 0.235)
+
+			ptsBox.Position = UDim2.fromScale(0, 0)
+			ptsBox.Size = UDim2.fromScale(1, 0.34)
+
+			endBtn.Position = UDim2.fromScale(0, 0.38)
+			endBtn.Size = UDim2.fromScale(1, 0.4)
+
+			surrBtn.Position = UDim2.fromScale(0, 0.81)
+			surrBtn.Size = UDim2.fromScale(1, 0.19)
+
+			actionBar.Position = UDim2.new(0.37, 0, 0.74, -8)
+		end
+	end
+	pcall(function()
+		root:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
+	end)
+	updateLayout()
 
 	local fx = new("Frame", { Name = "FX", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 40 }, root)
 
@@ -369,6 +512,16 @@ function MatchUI.Build(gui, overlay, cb)
 	local function inspect(card)
 		inspectedUid = card and card.Uid or nil
 		inspectedCard = card
+		if not info.Visible then
+			if card then
+				pcall(function()
+					Inspect.Init(root)
+					Inspect.Show(card)
+				end)
+			else
+				pcall(Inspect.Hide)
+			end
+		end
 	end
 
 	local function clearSel()
@@ -890,25 +1043,25 @@ function MatchUI.Build(gui, overlay, cb)
 	local function renderStatus()
 		local s = state
 		setLeader(oppL, s.oppLeader or "ศัตรู", s.oppLeaderId, s.oppHP or 0, s.oppShield or 0,
-			("🂠 มือ %d • 📚 %d • ⚰️ %d"):format(s.oppHandCount or 0, s.oppDeck or 0, s.oppGrave or 0))
+			("มือ %d • สำรับ %d • สุสาน %d"):format(s.oppHandCount or 0, s.oppDeck or 0, s.oppGrave or 0))
 		setLeader(myL, s.myLeader or "คุณ", s.myLeaderId, s.myHP or 0, s.myShield or 0,
-			("📚 %d • ⚰️ %d"):format(s.myDeck or 0, s.myGrave or 0))
+			("สำรับ %d • สุสาน %d"):format(s.myDeck or 0, s.myGrave or 0))
 		markLeader(oppL, targets.LEADER, false)
 		markLeader(myL, targets.MY_LEADER, true)
 
 		oppStatsLbl.Text = ("%s\n%s"):format(
-			(s.oppBank or 0) > 0 and ("💰 ศัตรูดองไว้ %d แต้ม!"):format(s.oppBank) or "💰 ศัตรูไม่ได้ดอง",
-			s.oppGateFilled and "🎲 มีการ์ดในเกต! ระวัง" or "🎲 เกตศัตรูว่าง")
+			(s.oppBank or 0) > 0 and ("ศัตรูดองไว้ %d แต้ม"):format(s.oppBank) or "ศัตรูไม่ได้ดอง",
+			s.oppGateFilled and "มีการ์ดในเกต! ระวัง" or "เกตศัตรูว่าง")
 
-		turnLbl.Text = ended and "จบเกม" or (s.isMyTurn and "🔥 ตาคุณ!" or "⏳ ตาศัตรู")
+		turnLbl.Text = ended and "จบเกม" or (s.isMyTurn and "ตาคุณ!" or "ตาศัตรู")
 		timerBox.BackgroundColor3 = s.isMyTurn and C.Yellow or C.Gray
 
 		local bombs = {}
-		for _, b in s.bombs or {} do table.insert(bombs, ("💣%d"):format(b)) end
-		midLbl.Text = ("เทิร์น %d   |   🧘สติ▶😈เบียว▶😵มึน▶🧘  🌀กาว▶ทุกธาตุ%s"):format(
-			s.turn or 0, #bombs > 0 and ("   |   ระเบิดอีก: " .. table.concat(bombs, " ")) or "")
+		for _, b in s.bombs or {} do table.insert(bombs, ("ระเบิด " .. b)) end
+		midLbl.Text = ("เทิร์น %d   |   สติ ➔ เบียว ➔ มึน ➔ สติ   กาว ➔ ทุกธาตุ%s"):format(
+			s.turn or 0, #bombs > 0 and ("   |   " .. table.concat(bombs, " ")) or "")
 
-		ptsLbl.Text = ("⚡ %d"):format(s.myPoints or 0)
+		ptsLbl.Text = tostring(s.myPoints or 0)
 		local acted = s.myActed
 		if acted == nil then acted = s.mySpent end
 		ptsSub.Text = acted and "จบเทิร์นแล้วแต้มที่เหลือหาย"
@@ -916,13 +1069,13 @@ function MatchUI.Build(gui, overlay, cb)
 		if ended then
 			endBtn.Text, endBtn.BackgroundColor3 = "จบเกม", C.Gray
 		elseif not s.isMyTurn then
-			endBtn.Text, endBtn.BackgroundColor3 = "⏳ รอศัตรู...", C.Gray
+			endBtn.Text, endBtn.BackgroundColor3 = "รอศัตรู...", C.Gray
 		elseif endPending then
 			endBtn.Text, endBtn.BackgroundColor3 = "...", C.Gray
 		elseif not acted then
-			endBtn.Text, endBtn.BackgroundColor3 = "💰 ข้าม (ดองพอยต์)", C.Pink
+			endBtn.Text, endBtn.BackgroundColor3 = "ข้าม (ดองพอยต์)", C.Pink
 		else
-			endBtn.Text, endBtn.BackgroundColor3 = "✅ จบเทิร์น", C.Lime
+			endBtn.Text, endBtn.BackgroundColor3 = "จบเทิร์น", C.Lime
 		end
 	end
 
@@ -1043,14 +1196,14 @@ function MatchUI.Build(gui, overlay, cb)
 		corner(box, 24); outline(box, 6)
 		local sc = new("UIScale", { Scale = 0.2 }, box)
 		tween(sc, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
-		local t = text(box, { Text = won and "🏆 ชนะแล้ววว!" or "🤡 แพ้ซะงั้น", TextColor3 = won and C.White or C.Ink,
+		local t = text(box, { Text = won and "ชนะแล้ว!" or "พ่ายแพ้", TextColor3 = won and C.White or C.Ink,
 			Position = UDim2.fromScale(0.05, 0.06), Size = UDim2.fromScale(0.9, 0.3) })
 		if won then textStroke(t, 4) end
 		maxText(text(box, { Text = REASON[reason] or tostring(reason), Font = FONT_BODY,
 			Position = UDim2.fromScale(0.05, 0.38), Size = UDim2.fromScale(0.9, 0.15) }), 26)
-		maxText(text(box, { Text = ("+%d 💎"):format(reward or 0), Font = FONT_NUM, TextColor3 = C.Purple,
+		maxText(text(box, { Text = ("+%d เพชร"):format(reward or 0), Font = FONT_NUM, TextColor3 = C.Purple,
 			Position = UDim2.fromScale(0.05, 0.53), Size = UDim2.fromScale(0.9, 0.17) }), 40)
-		local b = chunkyButton(box, "🌍 กลับไปเดินเล่น", C.Lime, function() exitMatch() end)
+		local b = chunkyButton(box, "กลับไปเดินเล่น", C.Lime, function() exitMatch() end)
 		b.AnchorPoint = Vector2.new(0.5, 0)
 		b.Position = UDim2.fromScale(0.5, 0.75)
 		b.Size = UDim2.fromScale(0.6, 0.18)
@@ -1089,20 +1242,20 @@ function MatchUI.Build(gui, overlay, cb)
 			surrBtn.Text = "แน่ใจนะ? กดอีกที"
 			wobble(surrBtn)
 			task.delay(3, function()
-				if surrTok == my then surrArmed = false; surrBtn.Text = "🏳️ ยอมแพ้" end
+				if surrTok == my then surrArmed = false; surrBtn.Text = "ยอมแพ้" end
 			end)
 			return
 		end
 		surrArmed = false
 		surrTok += 1
-		surrBtn.Text = "🏳️ ยอมแพ้"
+		surrBtn.Text = "ยอมแพ้"
 		Net.fire("Surrender")
 	end)
 
 	RunService.Heartbeat:Connect(function()
 		if not state or not root.Visible then return end
 		local left = math.max(0, math.floor((state.turnEndsAt or 0) - workspace:GetServerTimeNow()))
-		timerLbl.Text = ("⏱ %d:%02d"):format(left // 60, left % 60)
+		timerLbl.Text = ("%d:%02d"):format(left // 60, left % 60)
 		timerLbl.TextColor3 = (left <= 15 and state.isMyTurn) and C.Red or C.Ink
 	end)
 
@@ -1120,7 +1273,7 @@ function MatchUI.Build(gui, overlay, cb)
 			cancelDrag()
 			seenField, myGateFrame = {}, nil
 			surrArmed, surrTok = false, surrTok + 1
-			surrBtn.Text = "🏳️ ยอมแพ้"
+			surrBtn.Text = "ยอมแพ้"
 			root.Visible = true
 			Perf.SetMatch(true)
 			if cb.OnStart then task.spawn(cb.OnStart) end
@@ -1130,7 +1283,7 @@ function MatchUI.Build(gui, overlay, cb)
 		endPending = false
 		render(true, prevState)
 		if not ended and (prevState == nil or prevState.isMyTurn ~= s.isMyTurn) then
-			banner(s.isMyTurn and "🔥 ตาคุณแล้ว!" or "😈 ตาศัตรู...", s.isMyTurn and C.Yellow or C.Pink)
+			banner(s.isMyTurn and "ตาคุณแล้ว!" or "ตาศัตรู...", s.isMyTurn and C.Yellow or C.Pink)
 		end
 	end)
 

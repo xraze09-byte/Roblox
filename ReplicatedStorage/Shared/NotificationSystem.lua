@@ -14,29 +14,29 @@ local function getNotificationRE()
 	return nil
 end
 
-function NotificationSystem.Notify(message, color, lifetime)
+function NotificationSystem.Notify(message, color, lifetime, icon)
 	if RunService:IsClient() then
 		local rem = getNotificationRE()
 		if rem then
-			rem:FireServer(message, color, lifetime)
+			rem:FireServer(message, color, lifetime, icon)
 		end
 	end
 end
 
-function NotificationSystem.NotifyPlayer(player, message, color, lifetime)
+function NotificationSystem.NotifyPlayer(player, message, color, lifetime, icon)
 	if RunService:IsServer() and player then
 		local rem = getNotificationRE()
 		if rem then
-			rem:FireClient(player, message, color, lifetime)
+			rem:FireClient(player, message, color, lifetime, icon)
 		end
 	end
 end
 
-function NotificationSystem.NotifyAll(message, color, lifetime)
+function NotificationSystem.NotifyAll(message, color, lifetime, icon)
 	if RunService:IsServer() then
 		local rem = getNotificationRE()
 		if rem then
-			rem:FireAllClients(message, color, lifetime)
+			rem:FireAllClients(message, color, lifetime, icon)
 		end
 	end
 end

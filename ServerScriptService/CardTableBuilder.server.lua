@@ -74,3 +74,48 @@ cam.CFrame = CFrame.lookAt((ORIGIN * CFrame.new(0, 21, 14)).Position, (ORIGIN * 
 
 model.PrimaryPart = felt
 model.Parent = workspace
+game:GetService("CollectionService"):AddTag(model, "GlueDuelTable")
+
+-- ป้ายลอยเหนือโต๊ะ (3D BillboardGui) ให้ผู้เล่นมองเห็นได้แต่ไกล
+local bb = Instance.new("BillboardGui")
+bb.Name = "TableSign"
+bb.Size = UDim2.fromOffset(220, 70)
+bb.StudsOffset = Vector3.new(0, 8, 0)
+bb.AlwaysOnTop = true
+bb.MaxDistance = 150
+bb.Parent = felt
+
+local bbFrame = Instance.new("Frame")
+bbFrame.Size = UDim2.fromScale(1, 1)
+bbFrame.BackgroundColor3 = Color3.fromRGB(25, 20, 45)
+bbFrame.BackgroundTransparency = 0.15
+bbFrame.Parent = bb
+
+local bbCorner = Instance.new("UICorner")
+bbCorner.CornerRadius = UDim.new(0, 10)
+bbCorner.Parent = bbFrame
+
+local bbStroke = Instance.new("UIStroke")
+bbStroke.Color = Color3.fromRGB(255, 210, 60)
+bbStroke.Thickness = 2
+bbStroke.Parent = bbFrame
+
+local bbTitle = Instance.new("TextLabel")
+bbTitle.Size = UDim2.fromScale(1, 0.55)
+bbTitle.Position = UDim2.fromScale(0, 0.05)
+bbTitle.BackgroundTransparency = 1
+bbTitle.Text = "🃏 โต๊ะดวลกาวการ์ด 🃏"
+bbTitle.Font = Enum.Font.GothamBlack
+bbTitle.TextSize = 16
+bbTitle.TextColor3 = Color3.fromRGB(255, 230, 120)
+bbTitle.Parent = bbFrame
+
+local bbSub = Instance.new("TextLabel")
+bbSub.Size = UDim2.fromScale(1, 0.4)
+bbSub.Position = UDim2.fromScale(0, 0.55)
+bbSub.BackgroundTransparency = 1
+bbSub.Text = "กด [E] เพื่อเริ่มดวล"
+bbSub.Font = Enum.Font.GothamBold
+bbSub.TextSize = 13
+bbSub.TextColor3 = Color3.fromRGB(180, 225, 255)
+bbSub.Parent = bbFrame
