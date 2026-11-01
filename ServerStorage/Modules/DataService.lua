@@ -56,6 +56,8 @@ local function publish(player, data)
 	player:SetAttribute("Gems", data.Gems)
 	player:SetAttribute("Gold", data.Gold or 0)
 	player:SetAttribute("Streak", data.Streak)
+	player:SetAttribute("GlueWins", data.Wins or 0)
+	player:SetAttribute("GlueMatches", (data.Wins or 0) + (data.Losses or 0))
 
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then

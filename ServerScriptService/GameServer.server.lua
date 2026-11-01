@@ -1,3 +1,4 @@
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -196,6 +197,44 @@ local function recordMatchStats(m, player, won, reason, gems, bounty)
 	if bounty and bounty > 0 then Stats.Add(data, "BountyEarned", bounty) end
 end
 
+local recentPvPPairs = {}
+
+local function pvpRepeatMultiplier(a, b)
+	if typeof(a) ~= "Instance" or typeof(b) ~= "Instance" then return 1 end
+	local window = Config.PVP_REPEAT_WINDOW_SEC or 0
+	if window <= 0 then return 1 end
+	local now = os.clock()
+	for key, t in recentPvPPairs do
+		if now - t >= window then recentPvPPairs[key] = nil end
+	end
+	local ida, idb = a.UserId, b.UserId
+	if ida > idb then ida, idb = idb, ida end
+	local key = tostring(ida) .. ":" .. tostring(idb)
+	local last = recentPvPPairs[key]
+	recentPvPPairs[key] = now
+	if last then return Config.PVP_REPEAT_REWARD_MULT or 1 end
+	return 1
+end
+
+local function capPvPGems(player, amount)
+	amount = math.max(0, math.floor(tonumber(amount) or 0))
+	if amount <= 0 or typeof(player) ~= "Instance" then return 0 end
+	local cap = Config.PVP_DAILY_GEM_CAP
+	if not cap then return amount end
+	local data = DataService.GetData(player)
+	if not data then return 0 end
+	local today = math.floor(os.time() / 86400)
+	if data.PvPGemDay ~= today then
+		data.PvPGemDay = today
+		data.PvPGemsToday = 0
+	end
+	local used = tonumber(data.PvPGemsToday) or 0
+	local give = math.clamp(cap - used, 0, amount)
+	data.PvPGemsToday = used + give
+	DataService.Touch(player)
+	return give
+end
+
 local function onMatchEnded(m, winner, reason)
 	for _, p in m.players do
 		if ActiveMatches[p] == m then ActiveMatches[p] = nil end
@@ -205,11 +244,24 @@ local function onMatchEnded(m, winner, reason)
 	local loser = m:Opponent(winner)
 	local bounty = 0
 	if m.Mode == "PvP" then
-		bounty = DataService.GetStreak(loser) * Config.BOUNTY_PER_STREAK
-		DataService.RecordResult(winner, true)
-		DataService.RecordResult(loser, false)
-		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_PVP + bounty)
-		rewards[loser] = DataService.AddGems(loser, Config.REWARD_LOSE_PVP)
+		local turns = tonumber(m.turnCount) or 0
+		local minTurns = Config.PVP_MIN_TURNS_FOR_REWARD or 0
+		local counted = turns >= minTurns
+		local mult = counted and pvpRepeatMultiplier(winner, loser) or 0
+		if counted then
+			bounty = math.floor(DataService.GetStreak(loser) * Config.BOUNTY_PER_STREAK * mult)
+			DataService.RecordResult(winner, true)
+			DataService.RecordResult(loser, false)
+		else
+			DataService.RecordResult(loser, false)
+		end
+		rewards[winner] = DataService.AddGems(winner, capPvPGems(winner, math.floor(Config.REWARD_WIN_PVP * mult) + bounty))
+		rewards[loser] = DataService.AddGems(loser, capPvPGems(loser, math.floor(Config.REWARD_LOSE_PVP * mult)))
+		if not counted then
+			m:Notify(("แมตช์จบเร็วเกินไป (ต่ำกว่า %d เทิร์น) จึงไม่ได้รับเพชร"):format(minTurns), "Yellow")
+		elseif mult < 1 then
+			m:Notify("เจอคู่เดิมซ้ำในเวลาสั้นๆ รางวัลเพชรลดลง", "Yellow")
+		end
 		if bounty > 0 then m:Notify(("ล้มคนติดค่าหัวได้ โบนัส %d เพชร"):format(bounty), "Yellow") end
 	elseif m.Mode == "Tower" then
 		if typeof(winner) == "Instance" then
@@ -223,7 +275,9 @@ local function onMatchEnded(m, winner, reason)
 			m:Notify(("🗼 พิชิตชั้น %d สำเร็จ!"):format(floor), "Yellow")
 		end
 	elseif typeof(winner) == "Instance" then
-		rewards[winner] = DataService.AddGems(winner, Config.REWARD_WIN_BOT)
+		local levels = Config.BOT_DIFFICULTY
+		local level = levels and levels[m.BotDifficulty or "Normal"]
+		rewards[winner] = DataService.AddGems(winner, (level and tonumber(level.Reward)) or Config.REWARD_WIN_BOT)
 	end
 	for _, p in m.players do
 		if typeof(p) == "Instance" then
@@ -281,6 +335,9 @@ local function guarded(player, method, ...)
 end
 
 -- 5) Remotes
+local BOT_MODE_DIFFICULTY = { Bot = "Normal", BotEasy = "Easy", BotNormal = "Normal", BotHard = "Hard" }
+local BOT_NAMES = { Easy = "หุ่นฝึกซ้อม (ง่าย)", Normal = "หุ่นฝึกซ้อม", Hard = "หุ่นฝึกซ้อม (ยาก)" }
+
 local function queueImpl(player, mode, leaderId)
 	if mode == "Cancel" then
 		if waiting and waiting.player == player then
@@ -290,6 +347,8 @@ local function queueImpl(player, mode, leaderId)
 		return true, "CANCELLED"
 	end
 	if ActiveMatches[player] then return false, "IN_MATCH" end
+	local botDifficulty = BOT_MODE_DIFFICULTY[mode]
+	if botDifficulty then mode = "Bot" end
 	if mode ~= "Bot" and mode ~= "PvP" and mode ~= "Tower" then return false, "BAD_MODE" end
 	if not isLeader(leaderId) then return false, "BAD_LEADER" end
 	if not DataService.IsLoaded(player) then return false, "DATA_LOADING" end
@@ -322,9 +381,10 @@ local function queueImpl(player, mode, leaderId)
 	if mode == "Bot" then
 		if waiting and waiting.player == player then waiting = nil end
 		Stats.Add(DataService.GetData(player), "QueueBot")
-		local bot = { Name = "หุ่นฝึกซ้อม", IsBot = true }
+		local difficulty = botDifficulty or "Normal"
+		local bot = { Name = BOT_NAMES[difficulty] or "หุ่นฝึกซ้อม", IsBot = true, Difficulty = difficulty }
 		local botLeader = Decks.Leaders[math.random(#Decks.Leaders)]
-		if not startMatch(player, leaderId, bot, botLeader, "Bot") then return false, "SERVER_ERROR" end
+		if not startMatch(player, leaderId, bot, botLeader, "Bot", function(m) m.BotDifficulty = difficulty end) then return false, "SERVER_ERROR" end
 		return true, "STARTED"
 	end
 

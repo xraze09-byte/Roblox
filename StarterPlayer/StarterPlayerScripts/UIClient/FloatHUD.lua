@@ -1,3 +1,4 @@
+
 -- StarterPlayerScripts/UIClient/FloatHUD.lua
 -- ปุ่มลอย + เมนูรองแบบ Pop-up (แทน LobbyUI ทั้งหมด ไม่มีหน้าเต็มจอ)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -345,20 +346,31 @@ local function paintQueue()
 	fab.BackgroundColor3 = waiting and C.Pink or C.Red
 end
 
+local PVP_HINT_SEC = 30
+local queueTicket = nil
+
 local function startMode(mode)
 	if inMatch then return end
-	if queueMode == "PvP" and mode ~= "PvP" then
-		toast("ยกเลิกการหา PvP ก่อนนะ", C.Orange)
-		return
-	end
+	local leavingPvP = queueMode == "PvP" and mode ~= "PvP"
 	closePopup()
 	local lid = leaderId()
 	if not lid then toast("ยังไม่มีผู้นำให้เลือก", C.Red) return end
 	local ok, status = Net.invokeLocked("queue", "Queue", mode, lid)
-	if not ok then toast(Net.message(status), C.Red) return end
+	if not ok then toast(Net.message(status), C.Red) paintQueue() return end
+	if leavingPvP and queueMode == "PvP" then
+		queueMode = nil
+		queueTicket = nil
+	end
 	if status == "WAITING" and not inMatch then
 		queueMode = mode
 		toast("กำลังหาคู่ต่อสู้... กดอีกทีเพื่อยกเลิก", C.Pink)
+		local ticket = {}
+		queueTicket = ticket
+		task.delay(PVP_HINT_SEC, function()
+			if queueTicket == ticket and queueMode == "PvP" and not inMatch then
+				toast("ยังไม่เจอคู่ต่อสู้ กดซ้อมบอทได้เลย ระบบจะยกเลิกคิว PvP ให้", C.Orange)
+			end
+		end)
 	end
 	paintQueue()
 end
@@ -376,6 +388,16 @@ local function togglePvP()
 	end
 end
 
+local BOT_LEVELS = {
+	{ Mode = "BotEasy", Label = "ง่าย" },
+	{ Mode = "Bot", Label = "ปกติ" },
+	{ Mode = "BotHard", Label = "ยาก" },
+}
+local botLevelIndex = 2
+local function botLevelText()
+	return ("ระดับบอท: %s"):format(BOT_LEVELS[botLevelIndex].Label)
+end
+
 local function openBattle(owner)
 	owner = owner or fabs.Battle
 	local leaders = Decks.Leaders or {}
@@ -386,7 +408,12 @@ local function openBattle(owner)
 			local txt = b:FindFirstChildOfClass("TextLabel")
 			if txt then txt.Text = leaderName() else b.Text = leaderName() end
 		end },
-		{ Text = "ซ้อมบอท", Color = C.Lime, Icon = "Play", OnClick = function() startMode("Bot") end },
+		{ Text = botLevelText(), Color = C.Lime, Icon = "Up", Keep = true, OnClick = function(b)
+			botLevelIndex = botLevelIndex % #BOT_LEVELS + 1
+			local txt = b:FindFirstChildOfClass("TextLabel")
+			if txt then txt.Text = botLevelText() else b.Text = botLevelText() end
+		end },
+		{ Text = "ซ้อมบอท", Color = C.Lime, Icon = "Play", OnClick = function() startMode(BOT_LEVELS[botLevelIndex].Mode) end },
 		{ Text = queueMode == "PvP" and "ยกเลิกหา" or "PvP ออนไลน์", Color = C.Pink, Icon = "Lightning", OnClick = togglePvP },
 		{ Text = ("หอคอย ชั้น %d"):format(profile and profile.TowerFloor or 1), Color = C.Orange, Icon = "Up",
 			OnClick = function() startMode("Tower") end },
@@ -1018,3 +1045,9 @@ function FloatHUD.Refresh()
 end
 
 return FloatHUD
+
+-- 🔗 เชื่อมต่อเมนูกับ GlueLobbyHUD
+_G.GlueMenu = _G.GlueMenu or {}
+_G.GlueMenu.deck = function()
+	if DeckBuilder and DeckBuilder.Open then DeckBuilder.Open() end
+end

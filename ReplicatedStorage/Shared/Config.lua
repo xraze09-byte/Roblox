@@ -1,3 +1,4 @@
+
 -- ReplicatedStorage/Shared/Config (ModuleScript)
 return {
 	DECK_COMPOSITION = { Character = 12, Spell = 7, Weapon = 5 }, -- ตัวละคร+เวท+อาวุธ = 24 ใบ (ผู้นำเลือกแยก)
@@ -27,6 +28,15 @@ return {
 	REWARD_LOSE_PVP = 5,
 	REWARD_WIN_BOT = 10,
 	BOUNTY_PER_STREAK = 10,
+	PVP_MIN_TURNS_FOR_REWARD = 3,
+	PVP_REPEAT_WINDOW_SEC = 600,
+	PVP_REPEAT_REWARD_MULT = 0.25,
+	PVP_DAILY_GEM_CAP = 500,
+	BOT_DIFFICULTY = {
+		Easy = { Reward = 5, ThinkTime = 1.2, MistakeChance = 0.35, Smart = false },
+		Normal = { Reward = 10, ThinkTime = 0.9, MistakeChance = 0, Smart = false },
+		Hard = { Reward = 20, ThinkTime = 0.7, MistakeChance = 0, Smart = true },
+	},
 
 	-- เด็ค: จำนวนสูงสุดต่อใบตามความหายาก (คลังเก็บได้เท่านี้ด้วย)
 	MAX_COPIES = { Common = 2, Rare = 2, Epic = 1, Legend = 1, Mystic = 1 },
@@ -38,4 +48,16 @@ return {
 	GACHA_EPIC_PITY = 10,   -- ภายใน 10 ครั้งได้ Epic ขึ้นไปแน่นอน
 	GACHA_LEGEND_PITY = 60,
 	GACHA_DUPE_REFUND = { Common = 5, Rare = 15, Epic = 40, Legend = 100 },
+
+	-- กาวการ์ด (Chaos Card Battler)
+	GLUE_CARD = {
+		WIN_GOLD = 100,
+		LOSE_GOLD = 20,
+		MIN_WIN_SECONDS = 60,
+		MIN_WIN_TURNS = 6,
+		MIN_LOSE_SECONDS = 30,
+		SECONDS_PER_TURN = 1.5,
+		MAX_TURNS = 300,
+		MAX_REWARDS_PER_HOUR = 15,
+	},
 }

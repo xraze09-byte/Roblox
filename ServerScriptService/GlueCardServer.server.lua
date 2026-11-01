@@ -8,18 +8,22 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
+local Shared = ReplicatedStorage:FindFirstChild("Shared")
+local ConfigModule = Shared and Shared:FindFirstChild("Config")
+local GlobalConfig = ConfigModule and require(ConfigModule)
+local GLUE_CONFIG = GlobalConfig and GlobalConfig.GLUE_CARD
 
 local CONFIG = {
 	TABLE_TAG = "GlueDuelTable",
 	PROMPT_RANGE = 12,
 	MAX_TABLE_DISTANCE = 35,
-	MIN_WIN_SECONDS = 60,      -- ชนะเร็วกว่านี้ = ไม่ให้รางวัล
+	MIN_WIN_SECONDS = GLUE_CONFIG and GLUE_CONFIG.MIN_WIN_SECONDS or 60,      -- ชนะเร็วกว่านี้ = ไม่ให้รางวัล
 	MIN_WIN_TURNS = 6,
 	MIN_LOSE_SECONDS = 30,     -- กันกดแพ้รัวๆ เพื่อฟาร์มรางวัลปลอบใจ
 	SECONDS_PER_TURN = 1.5,    -- แต่ละเทิร์นมีแอนิเมชัน ใช้เวลาน้อยกว่านี้ไม่ได้
 	MAX_TURNS = 300,
-	WIN_GOLD = 100,
-	LOSE_GOLD = 20,
+	WIN_GOLD = GLUE_CONFIG and GLUE_CONFIG.WIN_GOLD or 100,
+	LOSE_GOLD = GLUE_CONFIG and GLUE_CONFIG.LOSE_GOLD or 20,
 	MAX_REWARDS_PER_HOUR = 15,
 }
 

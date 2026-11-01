@@ -1,3 +1,4 @@
+
 -- ServerStorage/Modules/BotAI (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -7,6 +8,18 @@ local Rules = require(Shared.Rules)
 local BotAI = {}
 local THINK_TIME = 0.9
 local rng = Random.new()
+local DEFAULT_PROFILE = { ThinkTime = THINK_TIME, MistakeChance = 0, Smart = false }
+
+local function profileOf(bot)
+	local list = Config.BOT_DIFFICULTY
+	local p = type(list) == "table" and list[bot and bot.Difficulty or "Normal"]
+	if type(p) ~= "table" then return DEFAULT_PROFILE end
+	return {
+		ThinkTime = tonumber(p.ThinkTime) or THINK_TIME,
+		MistakeChance = tonumber(p.MistakeChance) or 0,
+		Smart = p.Smart == true,
+	}
+end
 
 local function stillMyTurn(match, bot, token)
 	return not match.ended and match.current == bot and match.turnToken == token
@@ -50,6 +63,7 @@ local function chooseSpell(me, opp, card)
 end
 
 local function playPhase(match, bot, token)
+	local prof = profileOf(bot)
 	for _ = 1, 12 do
 		if not stillMyTurn(match, bot, token) then return end
 		local me = match.sides[bot]
@@ -58,7 +72,7 @@ local function playPhase(match, bot, token)
 		table.sort(hand, function(a, b) return a.Cost > b.Cost end)
 		local played = false
 		for _, card in hand do
-			if card.Cost <= me.points then
+			if card.Cost <= me.points and not (prof.MistakeChance > 0 and rng:NextNumber() < prof.MistakeChance) then
 				local target, ok
 				if card.Type == "Character" then
 					target, ok = chooseBoard(me)
@@ -72,7 +86,7 @@ local function playPhase(match, bot, token)
 			end
 		end
 		if not played then return end
-		task.wait(THINK_TIME)
+		task.wait(prof.ThinkTime)
 	end
 end
 
@@ -88,7 +102,30 @@ local function pickTarget(attacker, opp)
 	return "LEADER"
 end
 
+local function randomTarget(attacker, opp)
+	if Rules.HasTaunt(opp.field) then return pickTarget(attacker, opp) end
+	local i = rng:NextInteger(0, #opp.field)
+	if i == 0 then return "LEADER" end
+	return opp.field[i].Uid
+end
+
+local function pickTargetSmart(attacker, me, opp)
+	if Rules.HasTaunt(opp.field) then return pickTarget(attacker, opp) end
+	local total = 0
+	for _, c in me.field do
+		if c.CanAttack and c.ATK > 0 then total += c.ATK end
+	end
+	if opp.leaderHP and total >= opp.leaderHP + (opp.shield or 0) then return "LEADER" end
+	local best
+	for _, c in opp.field do
+		if c.HP <= attacker.ATK and c.ATK < attacker.HP and (not best or c.ATK > best.ATK) then best = c end
+	end
+	if best then return best.Uid end
+	return pickTarget(attacker, opp)
+end
+
 local function attackPhase(match, bot, token)
+	local prof = profileOf(bot)
 	local tried = {}
 	for _ = 1, 12 do
 		if not stillMyTurn(match, bot, token) then return end
@@ -99,8 +136,17 @@ local function attackPhase(match, bot, token)
 		end
 		if not attacker then return end
 		tried[attacker.Uid] = true
-		match:Attack(bot, attacker.Uid, pickTarget(attacker, match:OtherSide(me)))
-		task.wait(THINK_TIME)
+		local opp = match:OtherSide(me)
+		local target
+		if prof.Smart then
+			target = pickTargetSmart(attacker, me, opp)
+		elseif prof.MistakeChance > 0 and rng:NextNumber() < prof.MistakeChance then
+			target = randomTarget(attacker, opp)
+		else
+			target = pickTarget(attacker, opp)
+		end
+		match:Attack(bot, attacker.Uid, target)
+		task.wait(prof.ThinkTime)
 	end
 end
 
