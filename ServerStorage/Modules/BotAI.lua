@@ -1,24 +1,19 @@
--- ServerStorage/Modules/BotAI (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Rules = require(Shared.Rules)
 
 local BotAI = {}
-local THINK_TIME = 0.9
 local rng = Random.new()
-local DEFAULT_PROFILE = { ThinkTime = THINK_TIME, MistakeChance = 0, Smart = false }
 
-local function profileOf(bot)
-	local list = Config.BOT_DIFFICULTY
-	local p = type(list) == "table" and list[bot and bot.Difficulty or "Normal"]
-	if type(p) ~= "table" then return DEFAULT_PROFILE end
-	return {
-		ThinkTime = tonumber(p.ThinkTime) or THINK_TIME,
-		MistakeChance = tonumber(p.MistakeChance) or 0,
-		Smart = p.Smart == true,
-	}
-end
+-- match.BotLevel is set by GameServer. Tower / old "Bot" matches have none -> Medium (same as before).
+local LEVELS = {
+	Easy   = { Think = 1.3,  Skip = 0.3, Sloppy = 0.5, Smart = false, Bonus = 0 },
+	Medium = { Think = 0.9,  Skip = 0,   Sloppy = 0,   Smart = false, Bonus = 0 },
+	Hard   = { Think = 0.75, Skip = 0,   Sloppy = 0,   Smart = true,  Bonus = 0 },
+	Hacker = { Think = 0.5,  Skip = 0,   Sloppy = 0,   Smart = true,  Bonus = 1 }, -- cheats: +1 point/turn
+}
+local function levelOf(match) return LEVELS[match.BotLevel] or LEVELS.Medium end
 
 local function stillMyTurn(match, bot, token)
 	return not match.ended and match.current == bot and match.turnToken == token
@@ -61,17 +56,17 @@ local function chooseSpell(me, opp, card)
 	return nil, false
 end
 
-local function playPhase(match, bot, token)
-	local prof = profileOf(bot)
+local function playPhase(match, bot, token, L)
 	for _ = 1, 12 do
 		if not stillMyTurn(match, bot, token) then return end
+		if L.Skip > 0 and rng:NextNumber() < L.Skip then return end -- Easy: sometimes stops early
 		local me = match.sides[bot]
 		local opp = match:OtherSide(me)
 		local hand = table.clone(me.hand)
 		table.sort(hand, function(a, b) return a.Cost > b.Cost end)
 		local played = false
 		for _, card in hand do
-			if card.Cost <= me.points and not (prof.MistakeChance > 0 and rng:NextNumber() < prof.MistakeChance) then
+			if card.Cost <= me.points then
 				local target, ok
 				if card.Type == "Character" then
 					target, ok = chooseBoard(me)
@@ -85,75 +80,89 @@ local function playPhase(match, bot, token)
 			end
 		end
 		if not played then return end
-		task.wait(prof.ThinkTime)
+		task.wait(L.Think)
 	end
 end
 
-local function pickTarget(attacker, opp)
-	if Rules.HasTaunt(opp.field) then
-		for _, c in opp.field do
-			if Rules.HasKeyword(c, "Taunt") then return c.Uid end
-		end
+local function pickTarget(attacker, me, opp, L)
+	-- Taunt always first (Smart: the weakest taunt)
+	local taunts = {}
+	for _, c in opp.field do
+		if Rules.HasKeyword(c, "Taunt") then table.insert(taunts, c) end
 	end
+	if #taunts > 0 then
+		if L.Smart then table.sort(taunts, function(a, b) return a.HP < b.HP end) end
+		return taunts[1].Uid
+	end
+
+	-- Easy: random swings
+	if L.Sloppy > 0 and rng:NextNumber() < L.Sloppy then
+		if #opp.field > 0 and rng:NextNumber() < 0.5 then
+			return opp.field[rng:NextInteger(1, #opp.field)].Uid
+		end
+		return "LEADER"
+	end
+
+	if L.Smart then
+		-- Lethal check: everything to the face if it kills
+		local total = 0
+		for _, c in me.field do
+			if c.CanAttack and c.ATK > 0 then total += c.ATK end
+		end
+		if total >= opp.leaderHP then return "LEADER" end
+
+		-- Best value trade: kill something, prefer surviving and high-ATK targets
+		local best, bestScore
+		for _, c in opp.field do
+			if c.HP <= attacker.ATK then
+				local survive = c.ATK < attacker.HP
+				if survive or c.ATK >= attacker.ATK then
+					local score = c.ATK * 2 + c.HP + (survive and 10 or 0)
+					if not bestScore or score > bestScore then best, bestScore = c, score end
+				end
+			end
+		end
+		return best and best.Uid or "LEADER"
+	end
+
+	-- Medium (original behaviour)
 	for _, c in opp.field do
 		if c.HP <= attacker.ATK and c.ATK < attacker.HP then return c.Uid end
 	end
 	return "LEADER"
 end
 
-local function randomTarget(attacker, opp)
-	if Rules.HasTaunt(opp.field) then return pickTarget(attacker, opp) end
-	local i = rng:NextInteger(0, #opp.field)
-	if i == 0 then return "LEADER" end
-	return opp.field[i].Uid
-end
-
-local function pickTargetSmart(attacker, me, opp)
-	if Rules.HasTaunt(opp.field) then return pickTarget(attacker, opp) end
-	local total = 0
-	for _, c in me.field do
-		if c.CanAttack and c.ATK > 0 then total += c.ATK end
-	end
-	if opp.leaderHP and total >= opp.leaderHP + (opp.shield or 0) then return "LEADER" end
-	local best
-	for _, c in opp.field do
-		if c.HP <= attacker.ATK and c.ATK < attacker.HP and (not best or c.ATK > best.ATK) then best = c end
-	end
-	if best then return best.Uid end
-	return pickTarget(attacker, opp)
-end
-
-local function attackPhase(match, bot, token)
-	local prof = profileOf(bot)
+local function attackPhase(match, bot, token, L)
 	local tried = {}
 	for _ = 1, 12 do
 		if not stillMyTurn(match, bot, token) then return end
 		local me = match.sides[bot]
 		local attacker
 		for _, c in me.field do
-			if c.CanAttack and c.ATK > 0 and not tried[c.Uid] then attacker = c break end
+			if c.CanAttack and c.ATK > 0 and not tried[c.Uid]
+				and (not attacker or (L.Smart and c.ATK > attacker.ATK)) then
+				attacker = c
+			end
 		end
 		if not attacker then return end
 		tried[attacker.Uid] = true
-		local opp = match:OtherSide(me)
-		local target
-		if prof.Smart then
-			target = pickTargetSmart(attacker, me, opp)
-		elseif prof.MistakeChance > 0 and rng:NextNumber() < prof.MistakeChance then
-			target = randomTarget(attacker, opp)
-		else
-			target = pickTarget(attacker, opp)
-		end
-		match:Attack(bot, attacker.Uid, target)
-		task.wait(prof.ThinkTime)
+		match:Attack(bot, attacker.Uid, pickTarget(attacker, me, match:OtherSide(me), L))
+		task.wait(L.Think)
 	end
 end
 
 function BotAI.TakeTurn(match, bot, token)
+	local L = levelOf(match)
 	task.wait(1.5)
 	local ok, err = pcall(function()
-		playPhase(match, bot, token)
-		attackPhase(match, bot, token)
+		if L.Bonus > 0 and stillMyTurn(match, bot, token) then
+			local me = match.sides[bot]
+			if me and me.points then
+				me.points = math.min(me.points + L.Bonus, Config.MAX_BANKED_POINTS)
+			end
+		end
+		playPhase(match, bot, token, L)
+		attackPhase(match, bot, token, L)
 	end)
 	if not ok then warn("[BotAI] " .. tostring(err)) end
 	if stillMyTurn(match, bot, token) then match:EndTurn(bot, false) end

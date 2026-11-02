@@ -20,7 +20,7 @@ end
 
 -- 1) Remotes
 local REMOTES = {
-	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats", "GetProfile", "SaveDeck", "Gacha", "ClaimQuest", "GetFarms", "ClaimFarm", "UpgradeFarm" },
+	RemoteFunction = { "PlayCard", "Attack", "Queue", "GetStats", "GetProfile", "GetPublicProfile", "SaveDeck", "Gacha", "ClaimQuest", "GetFarms", "ClaimFarm", "UpgradeFarm" },
 	RemoteEvent = { "EndTurn", "Surrender", "StateUpdate", "GateRolled", "MatchEnded", "Notify", "ProfileChanged", "Notification" },
 }
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -274,9 +274,9 @@ local function onMatchEnded(m, winner, reason)
 			m:Notify(("🗼 พิชิตชั้น %d สำเร็จ!"):format(floor), "Yellow")
 		end
 	elseif typeof(winner) == "Instance" then
-		local levels = Config.BOT_DIFFICULTY
-		local level = levels and levels[m.BotDifficulty or "Normal"]
-		rewards[winner] = DataService.AddGems(winner, (level and tonumber(level.Reward)) or Config.REWARD_WIN_BOT)
+		local lv = m.BotLevel and Config.BOT_LEVELS and Config.BOT_LEVELS[m.BotLevel]
+		local amount = (lv and lv.Reward or Config.REWARD_WIN_BOT) + (m.BotMix and (Config.BOT_MIX_BONUS or 0) or 0)
+		rewards[winner] = DataService.AddGems(winner, amount)
 	end
 	for _, p in m.players do
 		if typeof(p) == "Instance" then
@@ -334,23 +334,6 @@ local function guarded(player, method, ...)
 end
 
 -- 5) Remotes
-local BOT_MODE_DIFFICULTY = { Bot = "Normal", BotEasy = "Easy", BotNormal = "Normal", BotHard = "Hard", BotHacker = "Hacker", BotMix = "Mix" }
-
-local function resolveBotDifficulty(key)
-	if key == "Mix" then
-		local pool = Config.BOT_MIX_POOL
-		if type(pool) ~= "table" or #pool == 0 then pool = { "Easy", "Normal", "Hard" } end
-		key = pool[math.random(#pool)]
-	end
-	local levels = Config.BOT_DIFFICULTY
-	local level = type(levels) == "table" and levels[key] or nil
-	if not level then
-		key = "Normal"
-		level = type(levels) == "table" and levels.Normal or nil
-	end
-	return key, level
-end
-
 local function queueImpl(player, mode, leaderId)
 	if mode == "Cancel" then
 		if waiting and waiting.player == player then
@@ -360,9 +343,8 @@ local function queueImpl(player, mode, leaderId)
 		return true, "CANCELLED"
 	end
 	if ActiveMatches[player] then return false, "IN_MATCH" end
-	local botDifficulty = BOT_MODE_DIFFICULTY[mode]
-	if botDifficulty then mode = "Bot" end
-	if mode ~= "Bot" and mode ~= "PvP" and mode ~= "Tower" then return false, "BAD_MODE" end
+	local botLevel = (mode == "Bot" and "Medium") or (typeof(mode) == "string" and mode:match("^Bot(%a+)$"))
+	if not botLevel and mode ~= "PvP" and mode ~= "Tower" then return false, "BAD_MODE" end
 	if not isLeader(leaderId) then return false, "BAD_LEADER" end
 	if not DataService.IsLoaded(player) then return false, "DATA_LOADING" end
 
@@ -394,15 +376,25 @@ local function queueImpl(player, mode, leaderId)
 	if mode == "Bot" then
 		if waiting and waiting.player == player then waiting = nil end
 		Stats.Add(DataService.GetData(player), "QueueBot")
-		local difficulty, level = resolveBotDifficulty(botDifficulty or "Normal")
-		local bot = { Name = (level and level.Name) or "หุ่นฝึกซ้อม", IsBot = true, Difficulty = difficulty }
+	-- Bot levels: "Bot" (old = Medium), BotEasy / BotMedium / BotHard / BotHacker / BotMix
+	local botLevel = (mode == "Bot" and "Medium") or (typeof(mode) == "string" and mode:match("^Bot(%a+)$"))
+	if botLevel then
+		local isMix = botLevel == "Mix"
+		if isMix then
+			local keys = { "Easy", "Medium", "Hard", "Hacker" }
+			botLevel = keys[math.random(#keys)]
+		end
+		local lv = Config.BOT_LEVELS and Config.BOT_LEVELS[botLevel]
+		if not lv then return false, "SERVER_ERROR" end
+		if waiting and waiting.player == player then waiting = nil end
+		Stats.Add(DataService.GetData(player), "QueueBot")
+		local bot = { Name = (isMix and "🎲 " or "") .. lv.Name, IsBot = true }
 		local botLeader = Decks.Leaders[math.random(#Decks.Leaders)]
-		if not startMatch(player, leaderId, bot, botLeader, "Bot", function(m)
-			m.BotDifficulty = difficulty
-			local shield = level and tonumber(level.Shield) or 0
-			local side = m.sides[bot]
-			if shield > 0 and side then side.shield += shield end
-		end) then return false, "SERVER_ERROR" end
+		local ok = startMatch(player, leaderId, bot, botLeader, "Bot", function(m)
+			m.BotLevel = botLevel
+			m.BotMix = isMix
+		end)
+		if not ok then return false, "SERVER_ERROR" end
 		return true, "STARTED"
 	end
 
@@ -435,6 +427,43 @@ Remotes.GetProfile.OnServerInvoke = function(player)
 	if not Guard.Allow(player, "GetProfile", 0.5) then return nil end
 	return snapshot(player)
 end
+
+-- Public profile (own or another player in this server). Gems only for yourself.
+Remotes.GetPublicProfile.OnServerInvoke = function(player, userId)
+	if not Guard.Allow(player, "GetPublicProfile", 0.5) then return nil end
+	if typeof(userId) ~= "number" then return nil end
+	local target = game:GetService("Players"):GetPlayerByUserId(userId)
+	if not target then return nil end
+	local data = DataService.GetData(target)
+	if not data then return nil end
+
+	local stats = DataService.GetStats(target)
+	local total = (typeof(stats) == "table" and typeof(stats.Total) == "table") and stats.Total or {}
+	local fight = {}
+	for _, k in { "Matches", "Wins", "Losses", "Draws", "CardsPlayed", "Attacks", "KillsMade",
+		"DamageToLeader", "DamageTaken", "HealDone", "GateRolls", "PlaySec" } do
+		fight[k] = tonumber(total[k]) or 0
+	end
+
+	local owned = {}
+	for id, n in data.Collection or {} do
+		if typeof(id) == "string" and (tonumber(n) or 0) > 0 then owned[id] = n end
+	end
+
+	return {
+		UserId = target.UserId,
+		Name = target.Name,
+		DisplayName = target.DisplayName,
+		Wins = data.Wins or 0, Losses = data.Losses or 0,
+		Streak = data.Streak or 0, BestStreak = data.BestStreak or 0,
+		TowerFloor = data.TowerFloor or 1,
+		Collection = owned,
+		Deck = table.clone(data.Deck or {}),
+		Fight = fight,
+		Gems = (target == player) and data.Gems or nil,
+	}
+end
+
 
 Remotes.PlayCard.OnServerInvoke = function(player, uid, target)
 	if not Guard.Allow(player, "PlayCard", 0.12) then return false, "SLOW_DOWN" end

@@ -26,20 +26,19 @@ return {
 	REWARD_WIN_PVP = 30,
 	REWARD_LOSE_PVP = 5,
 	REWARD_WIN_BOT = 10,
+	BOT_LEVELS = {
+		Easy   = { Name = "หุ่นฝึกหัด",    Reward = 5 },
+		Medium = { Name = "หุ่นฝึกซ้อม",   Reward = 10 },
+		Hard   = { Name = "นักสู้เหล็ก",    Reward = 20 },
+		Hacker = { Name = "แฮกเกอร์ 404",  Reward = 35 },
+	},
+	BOT_MIX_BONUS = 5,
+
 	BOUNTY_PER_STREAK = 10,
 	PVP_MIN_TURNS_FOR_REWARD = 3,
 	PVP_REPEAT_WINDOW_SEC = 600,
 	PVP_REPEAT_REWARD_MULT = 0.25,
 	PVP_DAILY_GEM_CAP = 500,
-	-- ระดับบอท (Normal = พฤติกรรม/รางวัลเดิม) Shield = โล่เพิ่มให้ผู้นำบอทตอนเริ่มแมตช์
-	BOT_DIFFICULTY = {
-		Easy = { Name = "หุ่นฝึกซ้อม (ง่าย)", Reward = 5, ThinkTime = 1.2, MistakeChance = 0.35, Smart = false, Shield = 0 },
-		Normal = { Name = "หุ่นฝึกซ้อม", Reward = 10, ThinkTime = 0.9, MistakeChance = 0, Smart = false, Shield = 0 },
-		Hard = { Name = "หุ่นฝึกซ้อม (ยาก)", Reward = 20, ThinkTime = 0.7, MistakeChance = 0, Smart = true, Shield = 0 },
-		Hacker = { Name = "หุ่นแฮกเกอร์", Reward = 30, ThinkTime = 0.5, MistakeChance = 0, Smart = true, Shield = 3 },
-	},
-	-- โหมด Mix: สุ่มระดับจากรายการนี้ทุกแมตช์
-	BOT_MIX_POOL = { "Easy", "Normal", "Hard" },
 
 	-- เด็ค: จำนวนสูงสุดต่อใบตามความหายาก (คลังเก็บได้เท่านี้ด้วย)
 	MAX_COPIES = { Common = 2, Rare = 2, Epic = 1, Legend = 1, Mystic = 1 },

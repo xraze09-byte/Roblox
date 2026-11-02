@@ -19,6 +19,19 @@ do
 	end
 end
 
+local function tryReq(name)
+	local m = script.Parent:FindFirstChild(name)
+	if not m then return nil end
+	local ok, r = pcall(require, m)
+	if not ok then warn("[FloatHUD] โหลด " .. name .. " ไม่ได้: " .. tostring(r)) return nil end
+	return r
+end
+local MenuKit = tryReq("MenuKit")
+local PlayPanel = tryReq("PlayPanel")
+local ProfilePanel = tryReq("ProfilePanel")
+local PlayerTap = tryReq("PlayerTap")
+
+
 local C = {
 	Red = Color3.fromRGB(255, 70, 100), Pink = Color3.fromRGB(255, 90, 200), Lime = Color3.fromRGB(150, 255, 90),
 	Orange = Color3.fromRGB(255, 150, 40), Yellow = Color3.fromRGB(255, 220, 60), Blue = Color3.fromRGB(80, 170, 255),
@@ -339,9 +352,9 @@ local function paintQueue()
 	if iconInst and iconInst:IsA("ImageLabel") then
 		iconInst.Image = waiting and Icons.get("Pause") or Icons.get("Play")
 	elseif iconInst and iconInst:IsA("TextLabel") then
-		iconInst.Text = waiting and "รอ..." or "สู้!"
+		iconInst.Text = waiting and "รอ..." or "เล่น!"
 	end
-	fab.Tag.Text = waiting and "กำลังหา..." or "สู้!"
+	fab.Tag.Text = waiting and "กำลังหา..." or "เล่น!"
 	fab.BackgroundColor3 = waiting and C.Pink or C.Red
 end
 
@@ -1050,6 +1063,45 @@ local function refreshProfile()
 	return false
 end
 
+-- ===== Main-screen actions: Play / Profile / Settings =====
+local function openPlay(owner)
+	if inMatch then return end
+	closePopup()
+	if not PlayPanel then openBattle(owner) return end -- fallback: old radial menu
+	PlayPanel.Open({
+		StartMode = startMode,
+		TogglePvP = togglePvP,
+		IsQueuing = function() return queueMode == "PvP" end,
+		LeaderName = leaderName,
+		NextLeader = function()
+			local n = #(Decks.Leaders or {})
+			if n > 0 then leaderIndex = ((leaderIndex or 1) % n) + 1 end
+		end,
+		TowerFloor = function() return profile and profile.TowerFloor or 1 end,
+	})
+end
+
+local function openProfile(userId, fromPoint)
+	if inMatch or not ProfilePanel then return end
+	closePopup()
+	ProfilePanel.Open(userId, { From = fromPoint })
+end
+
+local function openSettingsFab()
+	if inMatch then return end
+	closePopup()
+	if cb and cb.OpenSettings then cb.OpenSettings() return end
+	local SP = tryReq("SettingsPanel")
+	if not (SP and SP.Build and MenuKit) then toast("เปิดหน้าตั้งค่าไม่ได้", C.Red) return end
+	local w = MenuKit.open({ Title = "ตั้งค่า", Color = C.Gray, MaxSize = Vector2.new(560, 480) })
+	local ok, err = pcall(SP.Build, w.Body, {})
+	if not ok then
+		warn("[FloatHUD] SettingsPanel.Build: " .. tostring(err))
+		MenuKit.close()
+		toast("เปิดหน้าตั้งค่าไม่ได้", C.Red)
+	end
+end
+
 -- ===== Public API =====
 function FloatHUD.Build(hudGui, overlayGui, callbacks)
 	hud, overlay, cb = hudGui, overlayGui, callbacks or {}
@@ -1095,51 +1147,96 @@ function FloatHUD.Build(hudGui, overlayGui, callbacks)
 	Juice.wobble(gemsLabel, { Amp = 2, Rot = 2, Speed = 1.2 })
 
 	-- ขวา: สู้/เมนู   ซ้าย: เด็ค/กาชา   (เลี่ยงมุมล่างที่เป็นจอยสติ๊ก/ปุ่มกระโดดบนมือถือ)
+	-- ===== Main screen (mobile sketch) =====
+	-- Top-left: Profile + coins | Right column: More, Card, Shop, Quest, Setting | Bottom-center: Play
+	-- Walk stick (bottom-left) and Jump (bottom-right) are Roblox's built-in controls.
+	local UIS = game:GetService("UserInputService")
+	local RIGHT_IDS = { "More", "Deck", "Gacha", "Quest", "Setting" }
+
 	local function layoutFabs()
-		local TOP, GAP, TAG = 96, 14, 28
 		local screen = hud.AbsoluteSize
-		local W = (screen.X > 0 and screen.X or 1024)
-		local H = (screen.Y > 0 and screen.Y or 720)
-		local avail = H - TOP - 16
-		local function need(a, b) return a + b + TAG * 2 + GAP end
-		local k = math.clamp(avail / need(64, 96), 0.5, 1)
-		local kl = math.clamp(avail / need(76, 76), 0.5, 1)
+		local W = screen.X > 0 and screen.X or 1024
+		local H = screen.Y > 0 and screen.Y or 720
+		local touch = UIS.TouchEnabled and not UIS.KeyboardEnabled
+		local TAG, GAP = 26, 8
+		local edge = math.clamp(math.floor(W * 0.03), 16, 40)
+		local top = 60 -- below Roblox's top bar
 
-		local moreSize, battleSize = math.floor(64 * k), math.floor(96 * k)
-		local deckSize, gachaSize = math.floor(76 * kl), math.floor(76 * kl)
-
-		local moreY = TOP + moreSize / 2
-		local battleY = moreY + moreSize / 2 + TAG + GAP + battleSize / 2
-		local deckY = TOP + deckSize / 2
-		local gachaY = deckY + deckSize / 2 + TAG + GAP + gachaSize / 2
-
-		local sideMargin = math.clamp(math.floor(W * 0.05), 48, 80)
-
-		if fabs.More then
-			fabs.More.Size = UDim2.fromOffset(moreSize, moreSize)
-			Juice.setBase(fabs.More, UDim2.new(1, -sideMargin, 0, moreY))
+		-- Profile + coin bar
+		local pSize = math.clamp(math.floor(H * 0.14), 48, 72)
+		local pX, pY = edge + pSize / 2, top + pSize / 2
+		if fabs.Profile then
+			fabs.Profile.Size = UDim2.fromOffset(pSize, pSize)
+			Juice.setBase(fabs.Profile, UDim2.fromOffset(pX, pY))
 		end
+		if gemsLabel then
+			gemsLabel.AnchorPoint = Vector2.new(0, 0.5)
+			Juice.setBase(gemsLabel, UDim2.fromOffset(pX + pSize / 2 + 12, pY))
+		end
+
+		-- Right column (2 columns on short screens), kept clear of the jump button
+		local reserve = touch and math.floor(H * 0.3) or 24
+		local avail = H - top - reserve
+		local n, cols = #RIGHT_IDS, 1
+		local size = math.floor(avail / n - TAG - GAP)
+		if size < 44 then
+			cols = 2
+			size = math.floor(avail / math.ceil(n / cols) - TAG - GAP)
+		end
+		size = math.clamp(size, 40, 70)
+		for i, id in RIGHT_IDS do
+			local b = fabs[id]
+			if b then
+				local idx = i - 1
+				local col = cols == 2 and (idx % 2) or 0
+				local r = cols == 2 and math.floor(idx / 2) or idx
+			b.Size = UDim2.fromOffset(size, size)
+			Juice.setBase(b, UDim2.new(1, -(edge + size / 2 + col * (size + 18)), 0, top + size / 2 + r * (size + TAG + GAP)))
+			end
+		end
+
+		-- Play (bottom center)
 		if fabs.Battle then
-			fabs.Battle.Size = UDim2.fromOffset(battleSize, battleSize)
-			Juice.setBase(fabs.Battle, UDim2.new(1, -(sideMargin + 8), 0, battleY))
-		end
-		if fabs.Deck then
-			fabs.Deck.Size = UDim2.fromOffset(deckSize, deckSize)
-			Juice.setBase(fabs.Deck, UDim2.new(0, sideMargin, 0, deckY))
-		end
-		if fabs.Gacha then
-			fabs.Gacha.Size = UDim2.fromOffset(gachaSize, gachaSize)
-			Juice.setBase(fabs.Gacha, UDim2.new(0, sideMargin, 0, gachaY))
+			local s = math.clamp(math.floor(H * 0.2), 64, 100)
+			fabs.Battle.Size = UDim2.fromOffset(s, s)
+			Juice.setBase(fabs.Battle, UDim2.new(0.5, 0, 1, -(s / 2 + TAG + 12)))
 		end
 	end
 
-	local more = makeFab("More", "Panel", "เมนู", C.Purple, UDim2.new(1, -64, 0, 128), 64, openMore)
-	makeFab("Battle", "Play", "สู้!", C.Red, UDim2.new(1, -72, 0, 240), 96, openBattle)
-	makeFab("Deck", "Sort", "เด็ค", C.Blue, UDim2.new(0, 64, 0, 134), 76, openDeck)
-	makeFab("Gacha", "Chest", "กาชา", C.Pink, UDim2.new(0, 64, 0, 246), 76, openGacha)
-	moreBadge = makeBadge(more)
+	makeFab("More", "Panel", "เมนู", C.Purple, UDim2.new(1, -64, 0, 100), 56, openMore)
+	makeFab("Deck", "Sort", "การ์ด", C.Blue, UDim2.new(1, -64, 0, 170), 56, openDeck)
+	makeFab("Gacha", "Chest", "ร้านค้า", C.Pink, UDim2.new(1, -64, 0, 240), 56, function(b) openGacha(b) end)
+	makeFab("Quest", "Checkmark", "เควสต์", C.Lime, UDim2.new(1, -64, 0, 310), 56, function(b) openQuests(b) end)
+	makeFab("Setting", "⚙️", "ตั้งค่า", C.Gray, UDim2.new(1, -64, 0, 380), 56, openSettingsFab)
+	makeFab("Battle", "Play", "เล่น!", C.Red, UDim2.new(0.5, 0, 1, -90), 96, openPlay)
+	local prof = makeFab("Profile", "Heart", "โปรไฟล์", C.Yellow, UDim2.fromOffset(60, 90), 60, function() openProfile() end)
+	moreBadge = makeBadge(fabs.Quest) -- quest "!" badge now sits on the Quest button
+
+	-- Avatar headshot on the Profile button
+	task.spawn(function()
+		local P = game:GetService("Players")
+		local ok, img = pcall(function()
+			return P:GetUserThumbnailAsync(P.LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+		end)
+		if ok and img and prof.Parent then
+			local ic = prof:FindFirstChild("Icon")
+			if ic then ic.Visible = false end
+			local av = Instance.new("ImageLabel")
+			av.Name = "Avatar"
+			av.BackgroundTransparency = 1
+			av.Image = img
+			av.Size = UDim2.fromScale(1, 1)
+			av.ZIndex = 7
+			av.Parent = prof
+			corner(av)
+		end
+	end)
 
 	layoutFabs()
+
+	if PlayerTap then
+		PlayerTap.Init(function(userId, point) openProfile(userId, point) end)
+	end
 
 	Net.on("ProfileChanged", applyProfile)
 	hud:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
@@ -1169,6 +1266,7 @@ function FloatHUD.Action(action)
 end
 
 function FloatHUD.EnterMatch()
+	if MenuKit then MenuKit.close() end; if PlayerTap then PlayerTap.SetEnabled(false) end
 	inMatch = true
 	queueMode = nil
 	closePopup()
@@ -1179,6 +1277,7 @@ end
 FloatHUD.ResetQueue = FloatHUD.EnterMatch -- ชื่อเดิม
 
 function FloatHUD.ExitMatch()
+	if PlayerTap then PlayerTap.SetEnabled(true) end
 	inMatch = false
 	if hud then hud.Enabled = true end
 	FloatHUD.Refresh()
