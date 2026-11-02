@@ -284,6 +284,50 @@ player:GetAttributeChangedSignal("GlueWins"):Connect(refreshProfile)
 player:GetAttributeChangedSignal("GlueMatches"):Connect(refreshProfile)
 refreshProfile()
 
+---------------------------------------------------------------------
+-- 🪙 1.1) ป้ายแสดง Gold (ข้างโปรไฟล์)
+---------------------------------------------------------------------
+local goldBadge = make("TextButton", {
+	Name = "GoldBadge", Text = "", AutoButtonColor = false,
+	Position = UDim2.fromOffset(-420, 14), Size = UDim2.fromOffset(190, 52),
+	BackgroundColor3 = C.panel, BackgroundTransparency = 0.08, Parent = gui,
+})
+corner(goldBadge, UDim.new(0, 18))
+rainbowOn(stroke(goldBadge, C.gold, 2.5), 180)
+make("UIGradient", { Color = ColorSequence.new(C.white, Color3.fromRGB(180, 160, 210)), Rotation = 90, Parent = goldBadge })
+autoScale(goldBadge)
+
+local coinIcon = label({ Text = "🪙", Font = Enum.Font.FredokaOne, Position = UDim2.fromOffset(10, 6), Size = UDim2.fromOffset(40, 40), Parent = goldBadge })
+local goldVal = label({ Text = "500 Gold", Font = Enum.Font.GothamBlack, TextColor3 = C.gold, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(56, 6), Size = UDim2.fromOffset(124, 24), Parent = goldBadge })
+make("UIStroke", { Thickness = 1.2, Parent = goldVal })
+local goldSub = label({ Text = "🛒 แตะเพื่อเปิดร้านค้า", Font = Enum.Font.GothamMedium, TextColor3 = C.sub, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(56, 30), Size = UDim2.fromOffset(124, 16), Parent = goldBadge })
+
+local function refreshGold()
+	local g = player:GetAttribute("Gold") or 0
+	goldVal.Text = string.format("%d Gold", g)
+	punch(goldBadge, 1.15)
+end
+player:GetAttributeChangedSignal("Gold"):Connect(refreshGold)
+task.spawn(function()
+	task.wait(0.5)
+	refreshGold()
+end)
+
+goldBadge.MouseEnter:Connect(function()
+	tween(coinIcon, 0.25, { Rotation = 20 }, Enum.EasingStyle.Back)
+	hoverSfx()
+end)
+goldBadge.MouseLeave:Connect(function()
+	tween(coinIcon, 0.25, { Rotation = 0 }, Enum.EasingStyle.Back)
+end)
+goldBadge.Activated:Connect(function()
+	click()
+	punch(goldBadge, 1.25)
+	if type(_G.GlueMenu.shop) == "function" then
+		_G.GlueMenu.shop()
+	end
+end)
+
 local function openMyProfile(fromPoint)
 	if ProfilePanel and ProfilePanel.Open then
 		ProfilePanel.Open(player.UserId, { From = fromPoint })
@@ -370,34 +414,17 @@ quick.Activated:Connect(function()
 		return
 	end
 	
-	-- ลอง QuickPlay ผ่าน GlueCardRemotes
 	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
 	local remote = folder and folder:FindFirstChild("QuickPlay")
 	if remote then
-		quickCD = os.clock() + 3
+		quickCD = os.clock() + 2
 		click(1.2)
 		qTitle.Text = "⏳ กำลังจัดโต๊ะ..."
-		remote:FireServer()
-		task.delay(3, function() qTitle.Text = "⚡ ดวลด่วน!" end)
-		return
+		remote:FireServer({ difficulty = "Medium", mode = "Quick" })
+		task.delay(2.5, function() qTitle.Text = "⚡ ดวลด่วน!" end)
+	else
+		toast("⚠️ ยังไม่พบ GlueCardRemotes", C.glue)
 	end
-	
-	-- Fallback: ลองเริ่มผ่าน GameServer Queue
-	if Net then
-		quickCD = os.clock() + 3
-		click(1.2)
-		qTitle.Text = "⏳ เริ่มบอท..."
-		local ok, status = Net.invokeLocked("queue", "Queue", "Bot", 1)
-		if ok then
-			toast("⚔️ กำลังเริ่มดวลกับบอท!", C.gold)
-		else
-			toast("⚠️ ข้อผิดพลาด: " .. tostring(status), C.glue)
-		end
-		task.delay(3, function() qTitle.Text = "⚡ ดวลด่วน!" end)
-		return
-	end
-
-	toast("⚠️ เซิร์ฟเวอร์ยังไม่เปิดระบบ", C.glue)
 end)
 
 -- 3.2 ปุ่มเลือกโหมด (PlayPanel)
@@ -440,23 +467,24 @@ end
 local function startMode(mode)
 	if player:GetAttribute("GlueInDuel") == true then return end
 	if MenuKit and MenuKit.close then MenuKit.close() end
-	
-	if Net then
-		local lid = leaderId()
-		local ok, status = Net.invokeLocked("queue", "Queue", mode, lid)
-		if not ok then
-			toast("❌ " .. tostring(status), C.glue)
-			return
+
+	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
+	local remote = folder and folder:FindFirstChild("QuickPlay")
+	if remote then
+		local diff = "Medium"
+		if mode == "BotEasy" then diff = "Easy"
+		elseif mode == "BotMedium" then diff = "Medium"
+		elseif mode == "BotHard" then diff = "Hard"
+		elseif mode == "BotHacker" then diff = "Hacker"
+		elseif mode == "BotMix" then diff = "Mix"
+		elseif mode == "Tower" then diff = "Tower"
+		elseif mode == "PvP" then diff = "Hard"
 		end
-		if mode == "PvP" then
-			queueMode = "PvP"
-			toast("🔍 กำลังค้นหาคู่ต่อสู้ 1v1...", Color3.fromRGB(70, 180, 255))
-		else
-			queueMode = nil
-			toast("⚔️ กำลังเริ่มดวล (" .. tostring(mode) .. ")", C.gold)
-		end
+
+		toast("⚔️ กำลังเริ่มดวล (" .. tostring(mode) .. ")", C.gold)
+		remote:FireServer({ difficulty = diff, mode = mode })
 	else
-		toast("⚠️ ไม่พบ Net Remote", C.glue)
+		toast("⚠️ ยังไม่พบ GlueCardRemotes", C.glue)
 	end
 end
 
@@ -516,24 +544,6 @@ local openSettings, closeSettings
 local questDot
 
 -- เชื่อมต่อระบบให้กับ _G.GlueMenu
-_G.GlueMenu.deck = function()
-	if DeckBuilder and DeckBuilder.Open then
-		local CardData = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CardData"))
-		local profileData = Net and Net.invoke("GetProfile")
-		DeckBuilder.Open(gui, {
-			Cards = CardData,
-			Owned = (profileData and profileData.Collection) or {},
-			Deck = (profileData and profileData.Deck) or {},
-			OnSave = function(ids)
-				if Net then return Net.invoke("SaveDeck", ids) end
-				return true
-			end,
-		})
-	else
-		toast("🗃️ คลังการ์ดกำลังโหลด...", C.sub)
-	end
-end
-
 _G.GlueMenu.play = function()
 	if PlayPanel and PlayPanel.Open then
 		PlayPanel.Open(playApi)
@@ -544,14 +554,264 @@ _G.GlueMenu.profile = function()
 	openMyProfile(Vector2.new(160, 60))
 end
 
-_G.GlueMenu.shop = function()
-	local FarmUI = tryReq("FarmUI")
-	if FarmUI and FarmUI.Open then
-		FarmUI.Open(gui)
-	else
-		toast("🛒 ร้านค้า: เตรียมเปิดให้บริการเร็วๆ นี้!", C.gold)
+---------------------------------------------------------------------
+-- 🛒 6.1) ร้านค้าซื้อซองการ์ดกาว (Shop Gacha)
+---------------------------------------------------------------------
+local shopDim, shopWin = nil, nil
+local function closeShopModal()
+	if shopDim and shopDim.Parent then shopDim:Destroy(); shopDim = nil end
+end
+
+local function openShopModal()
+	closeShopModal()
+	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
+	local BuyPackRemote = folder and folder:FindFirstChild("BuyPack")
+
+	shopDim = make("TextButton", {
+		Name = "ShopModal", Text = "", AutoButtonColor = false,
+		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.5, ZIndex = 60, Parent = gui,
+	})
+	local shopBox = make("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(560, 460), BackgroundColor3 = C.panel, ZIndex = 61, Parent = shopDim,
+	})
+	corner(shopBox, UDim.new(0, 24))
+	rainbowOn(stroke(shopBox, C.white, 3.5), 160)
+	autoScale(shopBox)
+
+	local sTitle = label({ Text = "🛒 ร้านซองการ์ดกาว (Pack Gacha)", Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(24, 16), Size = UDim2.fromOffset(400, 32), ZIndex = 62, Parent = shopBox })
+	make("UIStroke", { Thickness = 1.5, Parent = sTitle })
+
+	local sClose = make("TextButton", {
+		Text = "✕", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white,
+		AutoButtonColor = false, Position = UDim2.new(1, -48, 0, 16), Size = UDim2.fromOffset(32, 32),
+		BackgroundColor3 = Color3.fromRGB(230, 60, 80), ZIndex = 62, Parent = shopBox,
+	})
+	corner(sClose, UDim.new(1, 0))
+	sClose.Activated:Connect(function() click(0.9); closeShopModal() end)
+
+	local sDesc = label({
+		Text = "เปิดซองการ์ดกาวสุดปั่น 100 Gold / ซอง • สุ่มได้การ์ด 3 ใบ สะสมเข้าคลัง!",
+		Font = Enum.Font.GothamMedium, TextColor3 = C.sub, TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(24, 52), Size = UDim2.fromOffset(510, 24), ZIndex = 62, Parent = shopBox,
+	})
+
+	local displayArea = make("Frame", {
+		Position = UDim2.fromOffset(24, 88), Size = UDim2.fromOffset(512, 260),
+		BackgroundColor3 = C.dark, BackgroundTransparency = 0.4, ZIndex = 62, Parent = shopBox,
+	})
+	corner(displayArea, UDim.new(0, 16))
+	stroke(displayArea, Color3.fromRGB(70, 60, 110), 2)
+
+	local packVisual = label({ Text = "📦", Font = Enum.Font.FredokaOne, Position = UDim2.fromScale(0.3, 0.1), Size = UDim2.fromScale(0.4, 0.55), ZIndex = 63, Parent = displayArea })
+	local packHint = label({ Text = "กดปุ่มด้านล่างเพื่อเปิดซองการ์ด!", Font = Enum.Font.GothamBold, TextColor3 = C.gold, Position = UDim2.fromScale(0.1, 0.72), Size = UDim2.fromScale(0.8, 0.2), ZIndex = 63, Parent = displayArea })
+
+	local buyBtn = make("TextButton", {
+		Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, -84), Size = UDim2.fromOffset(360, 60),
+		BackgroundColor3 = C.white, ZIndex = 62, Parent = shopBox,
+	})
+	corner(buyBtn, UDim.new(0.5, 0))
+	make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 170, 40), Color3.fromRGB(240, 50, 140)), Rotation = 90, Parent = buyBtn })
+	rainbowOn(stroke(buyBtn, C.white, 3), 200)
+
+	local bLabel = label({ Text = "✨ เปิดซอง (100 Gold)", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.05, 0.15), Size = UDim2.fromScale(0.9, 0.7), ZIndex = 63, Parent = buyBtn })
+	make("UIStroke", { Thickness = 1.5, Parent = bLabel })
+
+	local busy = false
+	buyBtn.Activated:Connect(function()
+		if busy then return end
+		if not BuyPackRemote then
+			toast("⚠️ ไม่พบระบบซื้อซองการ์ด", C.glue)
+			return
+		end
+		local gold = player:GetAttribute("Gold") or 0
+		if gold < 100 then
+			toast("❌ เหรียญ Gold ไม่พอ (ต้องใช้ 100 Gold)", C.glue)
+			punch(buyBtn, 0.9)
+			return
+		end
+
+		busy = true
+		click(1.2)
+		bLabel.Text = "⏳ กำลังเปิดซอง..."
+		tween(packVisual, 0.3, { Rotation = 25 }, Enum.EasingStyle.Back)
+
+		local ok, res = pcall(function() return BuyPackRemote:InvokeServer() end)
+		busy = false
+		bLabel.Text = "✨ เปิดอีกซอง (100 Gold)"
+		tween(packVisual, 0.3, { Rotation = 0 })
+
+		if not ok or type(res) ~= "table" or not res.ok then
+			toast("❌ " .. tostring(res and res.reason or "เปิดซองไม่สำเร็จ"), C.glue)
+			return
+		end
+
+		-- โชว์การ์ดที่ได้ 3 ใบ
+		for _, child in ipairs(displayArea:GetChildren()) do
+			if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+		end
+
+		toast("🎉 ยินดีด้วย! เปิดซองสำเร็จ ได้รับการ์ด 3 ใบ", C.gold)
+		sfx("rbxasset://sounds/electronicpingshort.wav", 1.2, 0.5)
+
+		local cardWidth = 150
+		for idx, card in ipairs(res.cards or {}) do
+			local xOffset = 18 + (idx - 1) * 168
+			local cFrame = make("Frame", {
+				Position = UDim2.fromOffset(xOffset, 16), Size = UDim2.fromOffset(cardWidth, 226),
+				BackgroundColor3 = C.panel, ZIndex = 64, Parent = displayArea,
+			})
+			corner(cFrame, UDim.new(0, 14))
+
+			local borderColor = card.rarity == "Glue" and C.glue
+				or card.rarity == "Legendary" and C.gold
+				or card.rarity == "Rare" and C.blue
+				or Color3.fromRGB(130, 135, 145)
+			stroke(cFrame, borderColor, 2.5)
+
+			local cEmoji = label({ Text = card.emoji or "🃏", Font = Enum.Font.FredokaOne, Position = UDim2.fromScale(0.1, 0.06), Size = UDim2.fromScale(0.8, 0.4), ZIndex = 65, Parent = cFrame })
+			local cName = label({ Text = card.name or "การ์ดกาว", Font = Enum.Font.GothamBold, Position = UDim2.fromScale(0.05, 0.48), Size = UDim2.fromScale(0.9, 0.18), ZIndex = 65, Parent = cFrame })
+			local cRarity = label({ Text = "[" .. tostring(card.rarity or "Common") .. "]", Font = Enum.Font.GothamMedium, TextColor3 = borderColor, Position = UDim2.fromScale(0.05, 0.68), Size = UDim2.fromScale(0.9, 0.14), ZIndex = 65, Parent = cFrame })
+			local cStat = label({
+				Text = card.kind == "Spell" and "✨ เวทมนตร์" or string.format("⚔%d ❤%d", card.atk or 0, card.hp or 0),
+				Font = Enum.Font.GothamBlack, TextColor3 = C.white, Position = UDim2.fromScale(0.05, 0.82), Size = UDim2.fromScale(0.9, 0.14), ZIndex = 65, Parent = cFrame,
+			})
+
+			punch(cFrame, 1.3)
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- 🃏 6.2) อัลบั้มคลังการ์ดกาว (Chaos Card Album)
+---------------------------------------------------------------------
+local albumDim = nil
+local function closeAlbumModal()
+	if albumDim and albumDim.Parent then albumDim:Destroy(); albumDim = nil end
+end
+
+local function openAlbumModal()
+	closeAlbumModal()
+	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
+	local GetColRemote = folder and folder:FindFirstChild("GetCollection")
+
+	albumDim = make("TextButton", {
+		Name = "AlbumModal", Text = "", AutoButtonColor = false,
+		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.5, ZIndex = 60, Parent = gui,
+	})
+	local aBox = make("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(640, 520), BackgroundColor3 = C.panel, ZIndex = 61, Parent = albumDim,
+	})
+	corner(aBox, UDim.new(0, 24))
+	rainbowOn(stroke(aBox, C.blue, 3.5), 140)
+	autoScale(aBox)
+
+	local aTitle = label({ Text = "🃏 อัลบั้มการ์ดกาว (Chaos Card Album)", Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(24, 16), Size = UDim2.fromOffset(450, 32), ZIndex = 62, Parent = aBox })
+	make("UIStroke", { Thickness = 1.5, Parent = aTitle })
+
+	local aClose = make("TextButton", {
+		Text = "✕", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white,
+		AutoButtonColor = false, Position = UDim2.new(1, -48, 0, 16), Size = UDim2.fromOffset(32, 32),
+		BackgroundColor3 = Color3.fromRGB(230, 60, 80), ZIndex = 62, Parent = aBox,
+	})
+	corner(aClose, UDim.new(1, 0))
+	aClose.Activated:Connect(function() click(0.9); closeAlbumModal() end)
+
+	local scroll = make("ScrollingFrame", {
+		Position = UDim2.fromOffset(24, 60), Size = UDim2.fromOffset(592, 436),
+		BackgroundColor3 = C.dark, BackgroundTransparency = 0.4, BorderSizePixel = 0,
+		ScrollBarThickness = 6, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ZIndex = 62, Parent = aBox,
+	})
+	corner(scroll, UDim.new(0, 16))
+	stroke(scroll, Color3.fromRGB(60, 50, 95), 1.5)
+
+	local grid = make("UIGridLayout", {
+		CellSize = UDim2.fromOffset(132, 170), CellPadding = UDim2.fromOffset(12, 12),
+		SortOrder = Enum.SortOrder.LayoutOrder, Parent = scroll,
+	})
+	make("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12), Parent = scroll })
+
+	local ALL_CARDS = {
+		{ id = "chicken", name = "ไก่ย่างอมตะ", emoji = "🐔", rarity = "Common" },
+		{ id = "cat", name = "แมวส้มจอมป่วน", emoji = "🐈", rarity = "Common" },
+		{ id = "dog", name = "หมาวัดตัวตึง", emoji = "🐕", rarity = "Common" },
+		{ id = "frog", name = "กบร้องลูกทุ่ง", emoji = "🐸", rarity = "Common" },
+		{ id = "dino", name = "ไดโนแขนสั้น", emoji = "🦖", rarity = "Common" },
+		{ id = "banana", name = "เปลือกกล้วย", emoji = "🍌", rarity = "Common" },
+		{ id = "mookata", name = "หมูกระทะ", emoji = "🥓", rarity = "Common" },
+		{ id = "coffee", name = "กาแฟ 3 แก้ว", emoji = "☕", rarity = "Common" },
+		{ id = "gluetube", name = "กาวตราช้าง", emoji = "🧪", rarity = "Common" },
+		{ id = "uncle", name = "ลุงวินซิ่งนรก", emoji = "🛵", rarity = "Rare" },
+		{ id = "raccoon", name = "แรคคูนหมูปิ้ง", emoji = "🦝", rarity = "Rare" },
+		{ id = "monkey", name = "ลิงขโมยมือถือ", emoji = "🐒", rarity = "Rare" },
+		{ id = "durian", name = "ทุเรียนพลีชีพ", emoji = "🍈", rarity = "Rare" },
+		{ id = "ninja", name = "นินจาหนีหนี้", emoji = "🥷", rarity = "Rare" },
+		{ id = "zombie", name = "ซอมบี้เงินเดือน", emoji = "🧟", rarity = "Rare" },
+		{ id = "slipper", name = "รองเท้าแตะแม่", emoji = "👡", rarity = "Rare" },
+		{ id = "bomb", name = "ระเบิดปลาร้า", emoji = "💣", rarity = "Rare" },
+		{ id = "momcall", name = "เสียงแม่เรียก", emoji = "📢", rarity = "Rare" },
+		{ id = "lag", name = "เน็ตหลุด", emoji = "📶", rarity = "Rare" },
+		{ id = "grandma", name = "ยายรองเท้าแตะ", emoji = "👵", rarity = "Legendary" },
+		{ id = "wizard", name = "พ่อมดไลฟ์สด", emoji = "🧙", rarity = "Legendary" },
+		{ id = "buffalo", name = "ควายบึ้กช้าง", emoji = "🐃", rarity = "Legendary" },
+		{ id = "clown", name = "ตัวตลกหัวร้อน", emoji = "🤡", rarity = "Glue" },
+		{ id = "duck", name = "เป็ดยางพิฆาต", emoji = "🦆", rarity = "Glue" },
+		{ id = "dragon", name = "มังกรกาวพันปี", emoji = "🐉", rarity = "Glue" },
+		{ id = "dice", name = "ลูกเต๋ากาว", emoji = "🎲", rarity = "Glue" },
+	}
+
+	local ownedMap = {}
+	if GetColRemote then
+		local ok, res = pcall(function() return GetColRemote:InvokeServer() end)
+		if ok and type(res) == "table" and res.collection then
+			ownedMap = res.collection
+		end
+	end
+
+	for idx, c in ipairs(ALL_CARDS) do
+		local count = ownedMap[c.id] or 0
+		local cardF = make("Frame", {
+			Size = UDim2.fromOffset(132, 170),
+			BackgroundColor3 = count > 0 and C.panel or Color3.fromRGB(20, 18, 30),
+			ZIndex = 63, LayoutOrder = idx, Parent = scroll,
+		})
+		corner(cardF, UDim.new(0, 12))
+
+		local borderColor = count == 0 and Color3.fromRGB(60, 55, 75)
+			or c.rarity == "Glue" and C.glue
+			or c.rarity == "Legendary" and C.gold
+			or c.rarity == "Rare" and C.blue
+			or Color3.fromRGB(140, 145, 160)
+
+		stroke(cardF, borderColor, 2)
+
+		local em = label({
+			Text = count > 0 and c.emoji or "❓",
+			Font = Enum.Font.FredokaOne, TextTransparency = count > 0 and 0 or 0.4,
+			Position = UDim2.fromScale(0.1, 0.08), Size = UDim2.fromScale(0.8, 0.45), ZIndex = 64, Parent = cardF,
+		})
+		local nm = label({
+			Text = c.name, Font = Enum.Font.GothamBold,
+			TextColor3 = count > 0 and C.white or C.sub,
+			Position = UDim2.fromScale(0.05, 0.54), Size = UDim2.fromScale(0.9, 0.2), ZIndex = 64, Parent = cardF,
+		})
+		local cnt = label({
+			Text = count > 0 and ("x" .. count) or "ยังไม่มี",
+			Font = Enum.Font.GothamBlack,
+			TextColor3 = count > 0 and C.gold or Color3.fromRGB(150, 70, 70),
+			Position = UDim2.fromScale(0.05, 0.76), Size = UDim2.fromScale(0.9, 0.16), ZIndex = 64, Parent = cardF,
+		})
 	end
 end
+
+_G.GlueMenu.shop = openShopModal
+_G.GlueMenu.deck = openAlbumModal
+
 
 _G.GlueMenu.quest = function()
 	local profileData = Net and Net.invoke("GetProfile")
@@ -762,37 +1022,14 @@ end
 dim.Activated:Connect(closeSettings)
 closeBtn.Activated:Connect(function() click(0.8); closeSettings() end)
 
----------------------------------------------------------------------
--- 🃏 รองรับ MatchUI สำหรับ GameServer
----------------------------------------------------------------------
-local matchGui = playerGui:FindFirstChild("MatchUI") or make("ScreenGui", {
-	Name = "MatchUI", ResetOnSpawn = false, DisplayOrder = 15, Parent = playerGui,
-})
-if MatchUI and MatchUI.Build then
-	pcall(function()
-		MatchUI.Build(matchGui, gui, {
-			OnStart = function()
-				player:SetAttribute("GlueInDuel", true)
-				if TableCamera and TableCamera.Enter then
-					TableCamera.Enter()
-				end
-			end,
-			OnExit = function()
-				if TableCamera and TableCamera.Exit then
-					TableCamera.Exit()
-				end
-				player:SetAttribute("GlueInDuel", false)
-				refreshProfile()
-			end,
-		})
-	end)
-end
+
 
 ---------------------------------------------------------------------
 -- 🎬 Intro + ซ่อนตอนดวล
 ---------------------------------------------------------------------
 local HOME = {
 	{ obj = profile, home = UDim2.fromOffset(12, 12), away = UDim2.fromOffset(-420, 12) },
+	{ obj = goldBadge, home = UDim2.fromOffset(344, 14), away = UDim2.fromOffset(-420, 14) },
 	{ obj = menu, home = UDim2.new(1, -12, 0.5, 0), away = UDim2.new(1, 220, 0.5, 0) },
 	{ obj = battleDock, home = UDim2.new(0.5, 0, 1, -16), away = UDim2.new(0.5, 0, 1, 220) },
 }

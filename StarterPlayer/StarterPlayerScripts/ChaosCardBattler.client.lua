@@ -41,6 +41,24 @@ local CONFIG = {
 	FATIGUE_DMG = 500,
 }
 
+
+local DEFAULT_BOT = {
+	name = "บอทลุงกาว 🤖 Lv.99",
+	avatar = "🤖",
+	think = 0.9,
+	mistake = 0.1,
+	lp = 8000,
+	cheat = false,
+}
+
+local BOT_PROFILES = {
+	Easy = { name = "หุ่นฝึกซ้อม (ง่าย) 🤖", avatar = "🤖", think = 1.3, mistake = 0.35, lp = 7000, cheat = false },
+	Medium = { name = "บอทลุงกาว 🤖 Lv.99", avatar = "🤖", think = 0.9, mistake = 0.1, lp = 8000, cheat = false },
+	Normal = { name = "บอทลุงกาว 🤖 Lv.99", avatar = "🤖", think = 0.9, mistake = 0.1, lp = 8000, cheat = false },
+	Hard = { name = "ลุงกาวหัวร้อน 🔥 Lv.150", avatar = "😡", think = 0.6, mistake = 0.0, lp = 9000, cheat = false },
+	Hacker = { name = "แฮกเกอร์สายกาว 👾 Lv.999", avatar = "👾", think = 0.4, mistake = 0.0, lp = 10000, cheat = true },
+}
+
 local CHAOS_MODES = {
 	{ name = "ปกติ", chance = 0.25 },
 	{ name = "ปั่น", chance = 0.5 },
@@ -390,11 +408,11 @@ end
 local EnemyPanel = panel("EnemyPanel", UDim2.fromScale(0.18, 0.015), UDim2.fromScale(0.64, 0.125), COLORS.enemy)
 do
 	local av, ring, ringStroke = makeAvatar(EnemyPanel, "🤖", COLORS.enemy, UDim2.fromScale(0.008, 0.08), UDim2.fromScale(0.2, 0.84), Enum.DominantAxis.Height)
-	label({ Text = "บอทลุงกาว 🤖 Lv.99", Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromScale(0.105, 0.08), Size = UDim2.fromScale(0.4, 0.28), Parent = EnemyPanel })
+	local nameL = label({ Text = "บอทลุงกาว 🤖 Lv.99", Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromScale(0.105, 0.08), Size = UDim2.fromScale(0.4, 0.28), Parent = EnemyPanel })
 	local lp = buildBar(EnemyPanel, UDim2.fromScale(0.105, 0.45), UDim2.fromScale(0.5, 0.36), Color3.fromRGB(255, 90, 110), Color3.fromRGB(180, 20, 60), "❤ LP ", "", CONFIG.START_LP)
 	local info = label({ Text = "", TextColor3 = COLORS.sub, Position = UDim2.fromScale(0.64, 0.08), Size = UDim2.fromScale(0.34, 0.36), Parent = EnemyPanel })
 	local glue = buildBar(EnemyPanel, UDim2.fromScale(0.64, 0.52), UDim2.fromScale(0.34, 0.3), Color3.fromRGB(255, 80, 200), Color3.fromRGB(140, 60, 255), "🧪 กาวบอท ", "%", CONFIG.GLUE_MAX)
-	Hero.enemy = { avatar = av, ring = ring, ringStroke = ringStroke, lp = lp, glue = glue, info = info }
+	Hero.enemy = { avatar = av, ring = ring, ringStroke = ringStroke, lp = lp, glue = glue, info = info, nameLabel = nameL }
 end
 
 -- 🟥🟦 Boards
@@ -2085,9 +2103,18 @@ botTurn = function(gid)
 		return State.gameId == gid and not State.gameOver and State.current == "enemy"
 	end
 	local s = State.sides.enemy
+	local bot = State.currentBot or DEFAULT_BOT
 	speech(Hero.enemy.avatar, pick(LINES.botThink), COLORS.enemy, true)
-	task.wait(1)
+	task.wait(bot.think or 0.9)
 	if not alive() then return end
+
+	-- แฮกเกอร์โกงมานา +1
+	if bot.cheat then
+		s.mana = math.min(CONFIG.MAX_MANA, s.mana + 1)
+		popText(heroPos("enemy"), "💻 แฮกมานา +1!", COLORS.gold, 1)
+		task.wait(0.2)
+	end
+
 	if s.glue >= CONFIG.GLUE_MAX then useUltimate("enemy"); task.wait(0.4) end
 
 	for _ = 1, 10 do
@@ -2104,9 +2131,13 @@ botTurn = function(gid)
 			end
 		end
 		if #options == 0 then break end
-		table.sort(options, function(a, b) return a.def.cost > b.def.cost end)
+		if bot.mistake and math.random() < bot.mistake then
+			shuffle(options)
+		else
+			table.sort(options, function(a, b) return a.def.cost > b.def.cost end)
+		end
 		if not playCard("enemy", options[1]) then break end
-		task.wait(0.5)
+		task.wait(bot.think and (bot.think * 0.5) or 0.5)
 	end
 
 	for _ = 1, 12 do
@@ -2117,6 +2148,10 @@ botTurn = function(gid)
 		end
 		if not attacker then break end
 		local target = botChooseTarget(attacker)
+		if bot.mistake and math.random() < bot.mistake then
+			local foes = getUnits("player")
+			if #foes > 0 then target = pick(foes) end
+		end
 		if target and isValidTarget(attacker, target) then
 			performAttack(attacker, target)
 			task.wait(0.35)
@@ -2128,7 +2163,7 @@ botTurn = function(gid)
 	if alive() and s.glue >= CONFIG.GLUE_MAX then useUltimate("enemy") end
 	if not alive() then return end
 	speech(Hero.enemy.avatar, pick(LINES.botEnd), COLORS.enemy, true)
-	task.wait(0.8)
+	task.wait(0.6)
 	if alive() then finishTurn("enemy") end
 end
 
@@ -2281,7 +2316,7 @@ resetGame = function()
 		State.sides[side].deck = buildDeck()
 	end
 	lastShown = { player = {}, enemy = {} }
-	Hero.enemy.avatar.Text = "🤖"
+	local curBot = State.currentBot or DEFAULT_BOT; Hero.enemy.avatar.Text = curBot.avatar or "🤖"; if Hero.enemy.nameLabel then Hero.enemy.nameLabel.Text = curBot.name or "บอทลุงกาว 🤖 Lv.99" end
 	setTurnLabel()
 	updateHeroUI()
 	refreshInteractivity()
@@ -2289,7 +2324,7 @@ resetGame = function()
 
 	local gid = State.gameId
 	task.spawn(function()
-		banner("🃏 กาวการ์ด!", "โหมด " .. CHAOS_MODES[State.chaos].name .. " • ปั่นให้สุด!", COLORS.glue, 1.2)
+		local curBot = State.currentBot or DEFAULT_BOT; banner("🃏 กาวการ์ด!", "โหมด " .. CHAOS_MODES[State.chaos].name .. " • " .. (curBot.name or "ดวลเดือด"), COLORS.glue, 1.2)
 		task.wait(1.7)
 		for _ = 1, CONFIG.START_HAND do
 			if State.gameId ~= gid then return end
@@ -2624,8 +2659,8 @@ do
 		tw.Completed:Wait()
 	end
 
-	local function startMatch()
-		local ok, matchId = pcall(function() return Remotes.NewMatch:InvokeServer() end)
+	local function startMatch(options)
+		local ok, matchId = pcall(function() return Remotes.NewMatch:InvokeServer(options) end)
 		if not ok or type(matchId) ~= "string" then return false end
 		Lobby.matchId = matchId
 		resetGame()
@@ -2636,6 +2671,7 @@ do
 		if not Lobby.open or (Lobby.busy and not force) then return end
 		Lobby.busy = true
 		Lobby.open = false
+		player:SetAttribute("GlueInDuel", false)
 		Remotes.LeaveTable:FireServer()
 		fadeTo(0, 0.3)
 		State.gameId += 1
@@ -2653,9 +2689,17 @@ do
 		Lobby.busy = false
 	end
 
-	local function openTable(tbl)
+	local function openTable(tbl, options)
 		if Lobby.open or Lobby.busy then return end
 		Lobby.busy = true
+		player:SetAttribute("GlueInDuel", true)
+		options = options or {}
+		State.lastOptions = options
+		local diff = options.difficulty or "Medium"
+		State.currentBot = BOT_PROFILES[diff] or BOT_PROFILES.Normal
+		if options.chaos and CHAOS_MODES[options.chaos] then
+			State.chaos = options.chaos
+		end
 		setLocked(true)
 		cameraEnter(tbl)
 		fadeTo(0, 0.25)
@@ -2666,7 +2710,7 @@ do
 			Lobby.diedConn = hum.Died:Connect(function() task.spawn(closeTable, true) end)
 		end
 		setMusic(true)
-		local ok = startMatch()
+		local ok = startMatch(options)
 		fadeTo(1, 0.4)
 		Lobby.busy = false
 		if not ok then
@@ -2714,7 +2758,7 @@ do
 			return
 		end
 		Lobby.busy = true
-		local ok = startMatch()
+		local ok = startMatch(State.lastOptions)
 		Lobby.busy = false
 		if not ok then popText(centerOf(Main), "⚠️ เริ่มแมตช์ใหม่ไม่ได้", COLORS.atk, 1.1) end
 	end
@@ -2742,8 +2786,8 @@ do
 		task.delay(2.5, function() exitBtn.label.Text = "🚪 ออกจากโต๊ะ" end)
 	end)
 
-	Remotes.OpenTable.OnClientEvent:Connect(function(tbl)
-		task.spawn(openTable, typeof(tbl) == "Instance" and tbl or nil)
+	Remotes.OpenTable.OnClientEvent:Connect(function(tbl, options)
+		task.spawn(openTable, typeof(tbl) == "Instance" and tbl or nil, typeof(options) == "table" and options or {})
 	end)
 end
 

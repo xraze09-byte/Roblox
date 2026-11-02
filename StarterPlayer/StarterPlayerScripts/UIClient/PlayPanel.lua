@@ -33,16 +33,22 @@ end
 
 local function rewardText(item, api)
 	if item.Id == "PvP" then
-		return ("ชนะ +%d เพชร • แพ้ +%d • ล่าค่าหัว +%d/สตรีค"):format(
-			Config.REWARD_WIN_PVP, Config.REWARD_LOSE_PVP, Config.BOUNTY_PER_STREAK)
+		return "ชนะ +150 Gold • แพ้ +35 Gold"
 	elseif item.Id == "Tower" then
 		local f = api.TowerFloor and api.TowerFloor() or 1
-		return ("ชั้น %d • ชนะ +%d เพชร"):format(f, Config.TOWER_REWARD_BASE + f * Config.TOWER_REWARD_PER_FLOOR)
+		return ("ชั้น %d • ชนะ +%d Gold"):format(f, 100 + f * 20)
 	elseif item.Level == "Mix" then
-		return ("รางวัลตามระดับที่สุ่มได้ +%d โบนัส"):format(Config.BOT_MIX_BONUS or 0)
+		return "สุ่มระดับบอททุกแมตช์ • ชนะรับโบนัส +50 Gold!"
+	elseif item.Level == "Easy" then
+		return "ชนะ +60 Gold • แพ้ +20 Gold"
+	elseif item.Level == "Medium" then
+		return "ชนะ +100 Gold • แพ้ +25 Gold"
+	elseif item.Level == "Hard" then
+		return "ชนะ +160 Gold • แพ้ +35 Gold"
+	elseif item.Level == "Hacker" then
+		return "ชนะ +250 Gold • แพ้ +45 Gold"
 	end
-	local lv = Config.BOT_LEVELS and Config.BOT_LEVELS[item.Level]
-	return ("ชนะ +%d เพชร"):format(lv and lv.Reward or Config.REWARD_WIN_BOT)
+	return "ชนะ +100 Gold"
 end
 
 local function row(parent, order)
