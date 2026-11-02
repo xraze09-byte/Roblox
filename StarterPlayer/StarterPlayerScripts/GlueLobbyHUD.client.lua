@@ -1,10 +1,12 @@
 --[[
-	🏛️ GlueLobbyHUD — โปรไฟล์ • ดวลด่วน • เมนูลัด • ตั้งค่า
-	วางที่: StarterPlayer ▸ StarterPlayerScripts (LocalScript)
-	• ซ่อนตัวเองอัตโนมัติตอนนั่งโต๊ะดวล (Attribute "GlueInDuel")
-	• สคริปต์อื่นลงทะเบียนเปิดหน้าต่างได้ เช่น
-	    _G.GlueMenu = _G.GlueMenu or {}
-	    _G.GlueMenu.deck = function() DeckBuilder.Open() end
+	🏛️ GlueLobbyHUD — สุดยอด HUD รวมระบบครบวงจร
+	• ล็อบบี้สไตล์กาวสุดสวย: ขอบรุ้งหมุนได้, เลเวล, แถบ XP, ฉายา, คำคมกวนๆ
+	• โปรไฟล์ 3D (ProfilePanel) กดดูของตัวเอง หรือ แตะตัวผู้เล่นอื่นในแมพ (PlayerTap)
+	• แผงเลือกโหมดดวล (PlayPanel): บอท 5 ระดับ (Easy, Medium, Hard, Hacker, Mix) + โหมด Tower + PvP 1v1
+	• ปุ่มดวลด่วน (QuickPlay): 1-Click ลงโต๊ะสู้บอททันที
+	• คลังจัดเด็ค (DeckBuilder), ร้านค้า/ฟาร์ม, เควสต์ประจำวัน
+	• หน้าต่างตั้งค่าสีรุ้ง: เสียง BGM, SFX, จอสั่น, หมุนจอ
+	• สลับหน้าจออัตโนมัติเมื่อเริ่ม/จบการดวล (GlueInDuel)
 ]]
 
 local Players = game:GetService("Players")
@@ -23,6 +25,28 @@ do
 end
 
 ---------------------------------------------------------------------
+-- 📦 โมดูลระบบ (โหลดแบบปลอดภัย Failsafe)
+---------------------------------------------------------------------
+local UIClient = script.Parent:FindFirstChild("UIClient")
+local function tryReq(name)
+	local m = UIClient and UIClient:FindFirstChild(name)
+	if not m then return nil end
+	local ok, res = pcall(require, m)
+	if ok then return res end
+	warn("[GlueHUD] โหลด " .. name .. " ไม่สำเร็จ:", res)
+	return nil
+end
+
+local ProfilePanel = tryReq("ProfilePanel")
+local PlayPanel = tryReq("PlayPanel")
+local PlayerTap = tryReq("PlayerTap")
+local DeckBuilder = tryReq("DeckBuilder")
+local MenuKit = tryReq("MenuKit")
+local Net = tryReq("Net")
+local MatchUI = tryReq("MatchUI")
+local TableCamera = tryReq("TableCamera")
+
+---------------------------------------------------------------------
 -- ⚙️ ค่าพื้นฐาน
 ---------------------------------------------------------------------
 local DEFAULTS = { GlueBGM = 1, GlueSFX = 1, GlueShake = true, GlueRotate = true }
@@ -39,6 +63,8 @@ local C = {
 	off = Color3.fromRGB(70, 65, 95),
 	dark = Color3.fromRGB(15, 12, 25),
 	white = Color3.new(1, 1, 1),
+	blue = Color3.fromRGB(70, 140, 255),
+	purple = Color3.fromRGB(150, 90, 255),
 }
 
 local RAINBOW = ColorSequence.new({
@@ -61,6 +87,7 @@ local RANKS = {
 local QUIPS = {
 	"วันนี้กาวหรือยัง? 🧪", "หล่อสุดในเซิร์ฟ 😎", "ลุงกาวรออยู่ที่โต๊ะนะ 🤖",
 	"อย่าจิ้มโปรไฟล์บ่อย เดี๋ยวช้ำ 😣", "ไปดวลได้แล้ว! 🃏", "แบตจะหมดแล้ว 🔋",
+	"เปิดโปรไฟล์ 3D ให้ดูแล้วนะ ✨",
 }
 
 local MENU = {
@@ -164,7 +191,7 @@ local function toast(text, color)
 	stroke(f, color or C.glue, 2.5)
 	label({ Text = text, Position = UDim2.fromScale(0.05, 0.2), Size = UDim2.fromScale(0.9, 0.6), ZIndex = 51, Parent = f })
 	tween(f, 0.35, { Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back)
-	task.delay(2.2, function()
+	task.delay(2.5, function()
 		if my ~= toastToken or not f.Parent then return end
 		tween(f, 0.25, { Position = UDim2.fromOffset(0, -90) }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
 		Debris:AddItem(f, 0.3)
@@ -172,7 +199,7 @@ local function toast(text, color)
 end
 
 ---------------------------------------------------------------------
--- 🧑 1) โปรไฟล์ (ซ้ายบน)
+-- 🧑 1) โปรไฟล์ (ซ้ายบน) + เชื่อมต่อ ProfilePanel
 ---------------------------------------------------------------------
 local profile = make("TextButton", {
 	Name = "Profile", Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(-420, 12),
@@ -214,7 +241,6 @@ task.spawn(function()
 	if ok then avatar.Image = img end
 end)
 
--- ✏️ ถ้า DataService มีเลเวลจริง ให้แทนสูตรนี้ด้วย Attribute จากเซิร์ฟเวอร์
 local function computeLevel()
 	local wins = player:GetAttribute("GlueWins") or 0
 	local matches = player:GetAttribute("GlueMatches") or 0
@@ -258,26 +284,58 @@ player:GetAttributeChangedSignal("GlueWins"):Connect(refreshProfile)
 player:GetAttributeChangedSignal("GlueMatches"):Connect(refreshProfile)
 refreshProfile()
 
+local function openMyProfile(fromPoint)
+	if ProfilePanel and ProfilePanel.Open then
+		ProfilePanel.Open(player.UserId, { From = fromPoint })
+	else
+		toast(pick(QUIPS), Color3.fromRGB(70, 180, 255))
+	end
+end
+
 profile.MouseEnter:Connect(function() tween(avatar, 0.3, { Rotation = 10 }, Enum.EasingStyle.Back); hoverSfx() end)
 profile.MouseLeave:Connect(function() tween(avatar, 0.3, { Rotation = 0 }, Enum.EasingStyle.Back) end)
 profile.Activated:Connect(function()
 	click(1.4)
 	punch(avatar, 0.7)
 	toast(pick(QUIPS), Color3.fromRGB(70, 180, 255))
+	task.delay(0.2, function()
+		openMyProfile(Vector2.new(160, 60))
+	end)
 end)
 
 ---------------------------------------------------------------------
--- ⚡ 3) ปุ่มดวลด่วน (กลางล่าง)
+-- 👁️ ระบบแตะผู้เล่นในฉาก 3D (PlayerTap) -> เปิด ProfilePanel
 ---------------------------------------------------------------------
-local quick = make("TextButton", {
-	Name = "QuickPlay", Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, 220), Size = UDim2.fromOffset(280, 86), BackgroundTransparency = 1, Parent = gui,
+if PlayerTap and ProfilePanel then
+	task.spawn(function()
+		pcall(function()
+			PlayerTap.Init(function(userId, screenPoint)
+				ProfilePanel.Open(userId, { From = screenPoint })
+			end)
+		end)
+	end)
+end
+
+---------------------------------------------------------------------
+-- ⚔️ 3) ด็อกปุ่มดวล (กลางล่าง): ดวลด่วน + เลือกโหมด
+---------------------------------------------------------------------
+local battleDock = make("Frame", {
+	Name = "BattleDock", AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, 220), Size = UDim2.fromOffset(450, 86),
+	BackgroundTransparency = 1, Parent = gui,
 })
-autoScale(quick)
+autoScale(battleDock)
+
+-- 3.1 ปุ่มดวลด่วน (QuickPlay)
+local quick = make("TextButton", {
+	Name = "QuickPlay", Text = "", AutoButtonColor = false,
+	Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(240, 86),
+	BackgroundTransparency = 1, Parent = battleDock,
+})
 local qInner = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, ClipsDescendants = true, Parent = quick })
 corner(qInner, UDim.new(0.5, 0))
 make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 130, 60), Color3.fromRGB(230, 40, 140)), Rotation = 90, Parent = qInner })
-rainbowOn(stroke(qInner, C.white, 5), 220)
+rainbowOn(stroke(qInner, C.white, 4), 220)
 local qScale = make("UIScale", { Parent = qInner })
 
 local shine = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, ZIndex = 1, Parent = qInner })
@@ -292,35 +350,153 @@ local shineGrad = make("UIGradient", {
 })
 local qTitle = label({ Text = "⚡ ดวลด่วน!", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.08, 0.1), Size = UDim2.fromScale(0.84, 0.5), ZIndex = 2, Parent = qInner })
 make("UIStroke", { Thickness = 2, Parent = qTitle })
-label({ Text = "สู้บอทลุงกาวทันที ไม่ต้องเดิน", TextColor3 = Color3.fromRGB(255, 235, 200), Position = UDim2.fromScale(0.1, 0.62), Size = UDim2.fromScale(0.8, 0.26), ZIndex = 2, Parent = qInner })
+label({ Text = "สู้บอททันที ไม่ต้องรอ", TextColor3 = Color3.fromRGB(255, 235, 200), Position = UDim2.fromScale(0.1, 0.62), Size = UDim2.fromScale(0.8, 0.26), ZIndex = 2, Parent = qInner })
 
 local qTarget, qHover, quickCD = 1, false, 0
-quick.MouseEnter:Connect(function() qHover = true; qTarget = 1.08; hoverSfx() end)
+quick.MouseEnter:Connect(function() qHover = true; qTarget = 1.06; hoverSfx() end)
 quick.MouseLeave:Connect(function() qHover = false; qTarget = 1 end)
 quick.MouseButton1Down:Connect(function() qTarget = 0.9 end)
-quick.MouseButton1Up:Connect(function() qTarget = qHover and 1.08 or 1 end)
+quick.MouseButton1Up:Connect(function() qTarget = qHover and 1.06 or 1 end)
+
 quick.Activated:Connect(function()
-	qTarget = qHover and 1.08 or 1
+	qTarget = qHover and 1.06 or 1
 	if os.clock() < quickCD then
-		toast("⏳ ใจเย็นๆ ลุงกำลังจัดโต๊ะอยู่", C.sub)
+		toast("⏳ ใจเย็นๆ กำลังจัดโต๊ะอยู่", C.sub)
 		return
 	end
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not hum or hum.Health <= 0 then
-		toast("💀 ตายอยู่ ดวลไม่ได้นะ", C.sub)
+		toast("💀 ตัวละครยังไม่พร้อม", C.sub)
 		return
 	end
+	
+	-- ลอง QuickPlay ผ่าน GlueCardRemotes
 	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
 	local remote = folder and folder:FindFirstChild("QuickPlay")
-	if not remote then
-		toast("⚠️ เซิร์ฟเวอร์ยังไม่เปิดระบบดวลด่วน", C.glue)
+	if remote then
+		quickCD = os.clock() + 3
+		click(1.2)
+		qTitle.Text = "⏳ กำลังจัดโต๊ะ..."
+		remote:FireServer()
+		task.delay(3, function() qTitle.Text = "⚡ ดวลด่วน!" end)
 		return
 	end
-	quickCD = os.clock() + 3
-	click(1.2)
-	qTitle.Text = "⏳ กำลังจัดโต๊ะ..."
-	remote:FireServer()
-	task.delay(3, function() qTitle.Text = "⚡ ดวลด่วน!" end)
+	
+	-- Fallback: ลองเริ่มผ่าน GameServer Queue
+	if Net then
+		quickCD = os.clock() + 3
+		click(1.2)
+		qTitle.Text = "⏳ เริ่มบอท..."
+		local ok, status = Net.invokeLocked("queue", "Queue", "Bot", 1)
+		if ok then
+			toast("⚔️ กำลังเริ่มดวลกับบอท!", C.gold)
+		else
+			toast("⚠️ ข้อผิดพลาด: " .. tostring(status), C.glue)
+		end
+		task.delay(3, function() qTitle.Text = "⚡ ดวลด่วน!" end)
+		return
+	end
+
+	toast("⚠️ เซิร์ฟเวอร์ยังไม่เปิดระบบ", C.glue)
+end)
+
+-- 3.2 ปุ่มเลือกโหมด (PlayPanel)
+local modeBtn = make("TextButton", {
+	Name = "ModeSelect", Text = "", AutoButtonColor = false,
+	Position = UDim2.fromOffset(250, 0), Size = UDim2.fromOffset(200, 86),
+	BackgroundTransparency = 1, Parent = battleDock,
+})
+local mInner = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, ClipsDescendants = true, Parent = modeBtn })
+corner(mInner, UDim.new(0.5, 0))
+make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(60, 110, 255), Color3.fromRGB(150, 60, 240)), Rotation = 90, Parent = mInner })
+rainbowOn(stroke(mInner, C.white, 3.5), 180)
+local mScale = make("UIScale", { Parent = mInner })
+
+local mTitle = label({ Text = "⚔️ เลือกโหมด", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.08, 0.1), Size = UDim2.fromScale(0.84, 0.5), ZIndex = 2, Parent = mInner })
+make("UIStroke", { Thickness = 2, Parent = mTitle })
+label({ Text = "บอท 5 ระดับ • PvP 1v1", TextColor3 = Color3.fromRGB(225, 230, 255), Position = UDim2.fromScale(0.06, 0.62), Size = UDim2.fromScale(0.88, 0.26), ZIndex = 2, Parent = mInner })
+
+local mTarget, mHover = 1, false
+modeBtn.MouseEnter:Connect(function() mHover = true; mTarget = 1.06; hoverSfx() end)
+modeBtn.MouseLeave:Connect(function() mHover = false; mTarget = 1 end)
+modeBtn.MouseButton1Down:Connect(function() mTarget = 0.9 end)
+modeBtn.MouseButton1Up:Connect(function() mTarget = mHover and 1.06 or 1 end)
+
+-- Adapter เชื่อมต่อ PlayPanel
+local Decks = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Decks"))
+local leaderIndex = 1
+local queueMode = nil
+
+local function leaderId()
+	local l = Decks.Leaders and Decks.Leaders[leaderIndex]
+	return l and l.Id or 1
+end
+
+local function leaderName()
+	local l = Decks.Leaders and Decks.Leaders[leaderIndex]
+	return l and l.Name or "หัวหน้า"
+end
+
+local function startMode(mode)
+	if player:GetAttribute("GlueInDuel") == true then return end
+	if MenuKit and MenuKit.close then MenuKit.close() end
+	
+	if Net then
+		local lid = leaderId()
+		local ok, status = Net.invokeLocked("queue", "Queue", mode, lid)
+		if not ok then
+			toast("❌ " .. tostring(status), C.glue)
+			return
+		end
+		if mode == "PvP" then
+			queueMode = "PvP"
+			toast("🔍 กำลังค้นหาคู่ต่อสู้ 1v1...", Color3.fromRGB(70, 180, 255))
+		else
+			queueMode = nil
+			toast("⚔️ กำลังเริ่มดวล (" .. tostring(mode) .. ")", C.gold)
+		end
+	else
+		toast("⚠️ ไม่พบ Net Remote", C.glue)
+	end
+end
+
+local function togglePvP()
+	if queueMode == "PvP" then
+		if MenuKit and MenuKit.close then MenuKit.close() end
+		if Net then
+			local ok = Net.invokeLocked("queue", "Queue", "Cancel")
+			if ok then
+				queueMode = nil
+				toast("ยกเลิกการหาคู่ต่อสู้แล้ว", C.sub)
+			end
+		end
+	else
+		startMode("PvP")
+	end
+end
+
+local playApi = {
+	StartMode = startMode,
+	TogglePvP = togglePvP,
+	IsQueuing = function() return queueMode == "PvP" end,
+	LeaderName = leaderName,
+	NextLeader = function()
+		local n = #(Decks.Leaders or {})
+		if n > 0 then leaderIndex = ((leaderIndex or 1) % n) + 1 end
+	end,
+	TowerFloor = function()
+		return player:GetAttribute("TowerFloor") or 1
+	end,
+}
+
+modeBtn.Activated:Connect(function()
+	click()
+	mTarget = mHover and 1.06 or 1
+	if PlayPanel and PlayPanel.Open then
+		PlayPanel.Open(playApi)
+	else
+		toast("🚧 หน้าต่างเลือกโหมดกำลังโหลด...", C.gold)
+	end
 end)
 
 ---------------------------------------------------------------------
@@ -338,6 +514,55 @@ make("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.Hori
 _G.GlueMenu = _G.GlueMenu or {}
 local openSettings, closeSettings
 local questDot
+
+-- เชื่อมต่อระบบให้กับ _G.GlueMenu
+_G.GlueMenu.deck = function()
+	if DeckBuilder and DeckBuilder.Open then
+		local CardData = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CardData"))
+		local profileData = Net and Net.invoke("GetProfile")
+		DeckBuilder.Open(gui, {
+			Cards = CardData,
+			Owned = (profileData and profileData.Collection) or {},
+			Deck = (profileData and profileData.Deck) or {},
+			OnSave = function(ids)
+				if Net then return Net.invoke("SaveDeck", ids) end
+				return true
+			end,
+		})
+	else
+		toast("🗃️ คลังการ์ดกำลังโหลด...", C.sub)
+	end
+end
+
+_G.GlueMenu.play = function()
+	if PlayPanel and PlayPanel.Open then
+		PlayPanel.Open(playApi)
+	end
+end
+
+_G.GlueMenu.profile = function()
+	openMyProfile(Vector2.new(160, 60))
+end
+
+_G.GlueMenu.shop = function()
+	local FarmUI = tryReq("FarmUI")
+	if FarmUI and FarmUI.Open then
+		FarmUI.Open(gui)
+	else
+		toast("🛒 ร้านค้า: เตรียมเปิดให้บริการเร็วๆ นี้!", C.gold)
+	end
+end
+
+_G.GlueMenu.quest = function()
+	local profileData = Net and Net.invoke("GetProfile")
+	local quests = profileData and profileData.Quests
+	if quests and #quests > 0 then
+		local q = quests[1]
+		toast("📜 เควสต์: " .. tostring(q.Text or q.Id) .. (" (%d/%d)"):format(q.Progress or 0, q.Goal or 1), C.on)
+	else
+		toast("📜 เควสต์ประจำวัน: ชนะการดวลเพื่อรับเหรียญรางวัล!", C.on)
+	end
+end
 
 for i, m in ipairs(MENU) do
 	local b = make("TextButton", { Text = "", AutoButtonColor = false, Size = UDim2.fromOffset(78, 80), BackgroundTransparency = 1, LayoutOrder = i, Parent = menu })
@@ -377,7 +602,7 @@ for i, m in ipairs(MENU) do
 			if not ok then warn("[GlueHUD] เปิด " .. m.id .. " ไม่สำเร็จ:", err) end
 		else
 			punch(icon, 1.6)
-			toast("🚧 " .. m.text .. " กำลังสร้าง... ลุงกาวยังโค้ดไม่เสร็จ 😅", C.gold)
+			toast("🚧 " .. m.text .. " กำลังโหลด...", C.gold)
 		end
 	end)
 end
@@ -389,7 +614,7 @@ player:GetAttributeChangedSignal("GlueQuestReady"):Connect(refreshQuestDot)
 refreshQuestDot()
 
 ---------------------------------------------------------------------
--- ⚙️ 29) หน้าต่างตั้งค่า
+-- ⚙️ 29) หน้าต่างตั้งค่าสีรุ้ง
 ---------------------------------------------------------------------
 local dim = make("TextButton", { Name = "SettingsDim", Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, Visible = false, ZIndex = 30, Parent = gui })
 local holder = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(440, 420), BackgroundTransparency = 1, ZIndex = 31, Parent = dim })
@@ -399,104 +624,98 @@ corner(win, UDim.new(0, 22))
 rainbowOn(stroke(win, C.white, 4), 120)
 local pop = make("UIScale", { Parent = win })
 
-local titleL = label({ Text = "⚙️ ตั้งค่าความกาว", Font = Enum.Font.GothamBlack, TextColor3 = C.gold, Position = UDim2.fromOffset(24, 14), Size = UDim2.fromOffset(330, 34), Parent = win })
-make("UIStroke", { Thickness = 2, Parent = titleL })
-label({ Text = "ค่าจะรีเซ็ตเมื่อออกจากเกม", Font = Enum.Font.GothamMedium, TextColor3 = C.sub, Position = UDim2.fromOffset(24, 48), Size = UDim2.fromOffset(330, 18), Parent = win })
-
-local closeBtn = make("TextButton", { Text = "✖", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white, AutoButtonColor = false, Position = UDim2.fromOffset(380, 14), Size = UDim2.fromOffset(42, 42), BackgroundColor3 = Color3.fromRGB(220, 60, 90), Parent = win })
+local titleL = label({ Text = "⚙️ ตั้งค่าความกาว", Font = Enum.Font.GothamBlack, Position = UDim2.fromOffset(24, 16), Size = UDim2.fromOffset(300, 32), TextXAlignment = Enum.TextXAlignment.Left, Parent = win })
+make("UIStroke", { Thickness = 1.5, Parent = titleL })
+local closeBtn = make("TextButton", { Text = "✕", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white, AutoButtonColor = false, Position = UDim2.new(1, -48, 0, 16), Size = UDim2.fromOffset(32, 32), BackgroundColor3 = Color3.fromRGB(230, 60, 80), Parent = win })
 corner(closeBtn, UDim.new(1, 0))
-stroke(closeBtn, C.white, 2)
-make("UIPadding", { PaddingTop = UDim.new(0.2, 0), PaddingBottom = UDim.new(0.2, 0), PaddingLeft = UDim.new(0.2, 0), PaddingRight = UDim.new(0.2, 0), Parent = closeBtn })
-closeBtn.MouseEnter:Connect(function() tween(closeBtn, 0.3, { Rotation = 90 }, Enum.EasingStyle.Back) end)
-closeBtn.MouseLeave:Connect(function() tween(closeBtn, 0.3, { Rotation = 0 }, Enum.EasingStyle.Back) end)
 
--- 🎚️ Slider
-local activeSlider
-local function makeSlider(y, title, attr)
-	label({ Text = title, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(300, 26), Parent = win })
-	local pct = label({ Text = "100%", Font = Enum.Font.FredokaOne, TextColor3 = C.gold, TextXAlignment = Enum.TextXAlignment.Right, Position = UDim2.fromOffset(340, y), Size = UDim2.fromOffset(76, 26), Parent = win })
-	local track = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(24, y + 36), Size = UDim2.fromOffset(392, 14), BackgroundColor3 = C.dark, Parent = win })
-	corner(track, UDim.new(0.5, 0))
-	local fill = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, Parent = track })
-	corner(fill, UDim.new(0.5, 0))
-	make("UIGradient", { Color = ColorSequence.new(C.glue, Color3.fromRGB(140, 60, 255)), Parent = fill })
-	local knob = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(1, 0.5), Size = UDim2.fromOffset(28, 28), BackgroundColor3 = C.white, ZIndex = 2, Parent = track })
+local function makeToggle(y, text, attr, onToggle)
+	local row = make("Frame", { Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(392, 44), BackgroundTransparency = 1, Parent = win })
+	label({ Text = text, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromScale(0, 0.15), Size = UDim2.fromScale(0.75, 0.7), Parent = row })
+	local tBtn = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.new(1, -64, 0.5, -16), Size = UDim2.fromOffset(64, 32), BackgroundColor3 = C.off, Parent = row })
+	corner(tBtn, UDim.new(1, 0))
+	local knob = make("Frame", { Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = C.white, Parent = tBtn })
 	corner(knob, UDim.new(1, 0))
-	stroke(knob, C.glue, 3)
-	local kScale = make("UIScale", { Parent = knob })
-
-	local function render()
-		local v = player:GetAttribute(attr) or 1
-		fill.Size = UDim2.fromScale(v, 1)
-		knob.Position = UDim2.fromScale(v, 0.5)
-		pct.Text = math.floor(v * 100 + 0.5) .. "%"
-		pct.Text = v <= 0 and "ปิด 🔇" or pct.Text
+	local function sync()
+		local val = player:GetAttribute(attr) ~= false
+		tween(tBtn, 0.25, { BackgroundColor3 = val and C.on or C.off })
+		tween(knob, 0.25, { Position = val and UDim2.fromOffset(36, 4) or UDim2.fromOffset(4, 4) }, Enum.EasingStyle.Back)
 	end
-	player:GetAttributeChangedSignal(attr):Connect(render)
-	render()
+	tBtn.Activated:Connect(function()
+		local val = player:GetAttribute(attr) ~= false
+		player:SetAttribute(attr, not val)
+		click(val and 0.9 or 1.2)
+		punch(tBtn, 1.2)
+		sync()
+		if onToggle then onToggle(not val) end
+	end)
+	sync()
+end
 
-	local function setFromX(x)
-		local v = (x - track.AbsolutePosition.X) / track.AbsoluteSize.X
-		v = math.clamp(math.floor(v * 20 + 0.5) / 20, 0, 1)
-		if player:GetAttribute(attr) ~= v then player:SetAttribute(attr, v) end
+local function demoShake()
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+	task.spawn(function()
+		for _ = 1, 8 do
+			cam.CFrame = cam.CFrame * CFrame.Angles(0, 0, math.rad(math.random(-3, 3)))
+			RunService.RenderStepped:Wait()
+		end
+	end)
+end
+
+local function demoRotate()
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+	local orig = cam.CFrame
+	tween(cam, 0.2, { CFrame = orig * CFrame.Angles(0, 0, math.rad(12)) }, Enum.EasingStyle.Back)
+	task.delay(0.22, function() tween(cam, 0.3, { CFrame = orig }, Enum.EasingStyle.Back) end)
+end
+
+local activeSlider = nil
+local function makeSlider(y, text, attr)
+	local row = make("Frame", { Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(392, 54), BackgroundTransparency = 1, Parent = win })
+	local nameLbl = label({ Text = text, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromScale(0, 0), Size = UDim2.fromScale(0.7, 0.45), Parent = row })
+	local valLbl = label({ Text = "100%", Font = Enum.Font.FredokaOne, TextColor3 = C.gold, TextXAlignment = Enum.TextXAlignment.Right, Position = UDim2.fromScale(0.7, 0), Size = UDim2.fromScale(0.3, 0.45), Parent = row })
+	local track = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = C.dark, Parent = row })
+	corner(track, UDim.new(1, 0))
+	local fill = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.glue, Parent = track })
+	corner(fill, UDim.new(1, 0))
+	make("UIGradient", { Color = ColorSequence.new(C.glue, Color3.fromRGB(120, 60, 255)), Parent = fill })
+	local thumb = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(1, 0.5), Size = UDim2.fromOffset(22, 22), BackgroundColor3 = C.white, Parent = track })
+	corner(thumb, UDim.new(1, 0))
+	stroke(thumb, C.panel, 2)
+	local function setVal(v, fire)
+		v = math.clamp(v, 0, 1)
+		fill.Size = UDim2.fromScale(v, 1)
+		thumb.Position = UDim2.fromScale(v, 0.5)
+		valLbl.Text = string.format("%d%%", math.round(v * 100))
+		if fire then player:SetAttribute(attr, v) end
+	end
+	setVal(player:GetAttribute(attr) or 1, false)
+	local dragging = false
+	local function update(input)
+		local x = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		setVal(x, true)
 	end
 	track.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			activeSlider = { setFromX = setFromX, kScale = kScale, attr = attr }
-			setFromX(input.Position.X)
-			tween(kScale, 0.15, { Scale = 1.3 }, Enum.EasingStyle.Back)
+			dragging = true
+			activeSlider = track
+			punch(thumb, 1.4)
+			update(input)
 		end
 	end)
-end
-
-UserInputService.InputChanged:Connect(function(input)
-	if activeSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		activeSlider.setFromX(input.Position.X)
-	end
-end)
-UserInputService.InputEnded:Connect(function(input)
-	if activeSlider and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-		tween(activeSlider.kScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Back)
-		if activeSlider.attr == "GlueSFX" then click(1.3) end -- ลองเสียงที่ระดับใหม่
-		activeSlider = nil
-	end
-end)
-
--- 🔘 Toggle
-local function demoShake()
-	task.spawn(function()
-		for i = 1, 8 do
-			win.Position = UDim2.new(0.5, math.random(-8, 8), 0.5, math.random(-8, 8))
-			task.wait(0.03)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if dragging then click(0.9) end
+			dragging = false
+			if activeSlider == track then activeSlider = nil end
 		end
-		win.Position = UDim2.fromScale(0.5, 0.5)
 	end)
-end
-local function demoRotate()
-	win.Rotation = 0
-	tween(win, 0.6, { Rotation = 360 }, Enum.EasingStyle.Back)
-	task.delay(0.65, function() win.Rotation = 0 end)
-end
-
-local function makeToggle(y, title, attr, demo)
-	label({ Text = title, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(24, y + 4), Size = UDim2.fromOffset(300, 26), Parent = win })
-	local sw = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(346, y), Size = UDim2.fromOffset(70, 34), BackgroundColor3 = C.on, Parent = win })
-	corner(sw, UDim.new(0.5, 0))
-	stroke(sw, C.white, 2, 0.3)
-	local knob = make("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(1, -31, 0.5, 0), Size = UDim2.fromOffset(28, 28), BackgroundColor3 = C.white, Parent = sw })
-	corner(knob, UDim.new(1, 0))
-	local function render()
-		local on = player:GetAttribute(attr) ~= false
-		tween(sw, 0.2, { BackgroundColor3 = on and C.on or C.off })
-		tween(knob, 0.25, { Position = on and UDim2.new(1, -31, 0.5, 0) or UDim2.new(0, 3, 0.5, 0) }, Enum.EasingStyle.Back)
-	end
-	player:GetAttributeChangedSignal(attr):Connect(render)
-	render()
-	sw.Activated:Connect(function()
-		local turnOn = player:GetAttribute(attr) == false
-		player:SetAttribute(attr, turnOn)
-		click(turnOn and 1.3 or 0.8)
-		if turnOn and demo then demo() end
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			update(input)
+		end
 	end)
 end
 
@@ -544,12 +763,38 @@ dim.Activated:Connect(closeSettings)
 closeBtn.Activated:Connect(function() click(0.8); closeSettings() end)
 
 ---------------------------------------------------------------------
+-- 🃏 รองรับ MatchUI สำหรับ GameServer
+---------------------------------------------------------------------
+local matchGui = playerGui:FindFirstChild("MatchUI") or make("ScreenGui", {
+	Name = "MatchUI", ResetOnSpawn = false, DisplayOrder = 15, Parent = playerGui,
+})
+if MatchUI and MatchUI.Build then
+	pcall(function()
+		MatchUI.Build(matchGui, gui, {
+			OnStart = function()
+				player:SetAttribute("GlueInDuel", true)
+				if TableCamera and TableCamera.Enter then
+					TableCamera.Enter()
+				end
+			end,
+			OnExit = function()
+				if TableCamera and TableCamera.Exit then
+					TableCamera.Exit()
+				end
+				player:SetAttribute("GlueInDuel", false)
+				refreshProfile()
+			end,
+		})
+	end)
+end
+
+---------------------------------------------------------------------
 -- 🎬 Intro + ซ่อนตอนดวล
 ---------------------------------------------------------------------
 local HOME = {
 	{ obj = profile, home = UDim2.fromOffset(12, 12), away = UDim2.fromOffset(-420, 12) },
 	{ obj = menu, home = UDim2.new(1, -12, 0.5, 0), away = UDim2.new(1, 220, 0.5, 0) },
-	{ obj = quick, home = UDim2.new(0.5, 0, 1, -16), away = UDim2.new(0.5, 0, 1, 220) },
+	{ obj = battleDock, home = UDim2.new(0.5, 0, 1, -16), away = UDim2.new(0.5, 0, 1, 220) },
 }
 local function intro()
 	for i, h in ipairs(HOME) do
@@ -564,6 +809,7 @@ local function syncDuel()
 	local inDuel = player:GetAttribute("GlueInDuel") == true
 	if inDuel then
 		closeSettings()
+		if MenuKit and MenuKit.close then MenuKit.close() end
 		gui.Enabled = false
 	elseif not gui.Enabled then
 		gui.Enabled = true
@@ -576,7 +822,7 @@ player:GetAttributeChangedSignal("GlueInDuel"):Connect(syncDuel)
 ---------------------------------------------------------------------
 -- 🎞️ Render loop
 ---------------------------------------------------------------------
-local clock, qCur = 0, 1
+local clock, qCur, mCur = 0, 1, 1
 RunService.RenderStepped:Connect(function(dt)
 	if not gui.Enabled then return end
 	clock += dt
@@ -589,8 +835,15 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 	if rankRainbow then rankGrad.Rotation = (rankGrad.Rotation + 120 * dt) % 360 end
+	
+	-- อนิเมชันปุ่มดวลด่วน
 	qCur += (qTarget - qCur) * math.min(1, dt * 14)
-	qScale.Scale = qCur + math.sin(clock * 4) * 0.03
+	qScale.Scale = qCur + math.sin(clock * 4) * 0.02
+	
+	-- อนิเมชันปุ่มเลือกโหมด
+	mCur += (mTarget - mCur) * math.min(1, dt * 14)
+	mScale.Scale = mCur + math.sin(clock * 4 + 1) * 0.02
+	
 	local t = clock % 2.5
 	shineGrad.Offset = Vector2.new(t < 0.8 and (-1 + t / 0.8 * 2) or 1, 0)
 	if questDot and questDot.Visible then

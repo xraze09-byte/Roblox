@@ -12,8 +12,8 @@ local Kit = {}
 local C = {
 	Red = Color3.fromRGB(255, 70, 100), Pink = Color3.fromRGB(255, 90, 200), Lime = Color3.fromRGB(150, 255, 90),
 	Orange = Color3.fromRGB(255, 150, 40), Yellow = Color3.fromRGB(255, 220, 60), Blue = Color3.fromRGB(80, 170, 255),
-	Purple = Color3.fromRGB(150, 90, 255), Panel = Color3.fromRGB(58, 24, 130), Ink = Color3.fromRGB(25, 10, 45),
-	White = Color3.new(1, 1, 1), Gray = Color3.fromRGB(150, 150, 170), Dark = Color3.fromRGB(38, 14, 88),
+	Purple = Color3.fromRGB(150, 90, 255), Panel = Color3.fromRGB(28, 24, 48), Ink = Color3.fromRGB(15, 12, 25),
+	White = Color3.new(1, 1, 1), Gray = Color3.fromRGB(150, 150, 170), Dark = Color3.fromRGB(20, 17, 36),
 }
 Kit.C = C
 
@@ -183,7 +183,24 @@ function Kit.open(opts)
 	win.Size = UDim2.fromScale(0.9, 0.84)
 	win.BackgroundColor3 = C.Panel
 	win.Parent = root
-	Kit.corner(win, UDim.new(0, 18)); Kit.stroke(win, opts.Color or C.Yellow, 4)
+	Kit.corner(win, UDim.new(0, 18))
+	local winStroke = Kit.stroke(win, Color3.new(1, 1, 1), 3.5)
+	local winGrad = Instance.new("UIGradient")
+	winGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
+		ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 170, 40)),
+		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 60)),
+		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(60, 255, 120)),
+		ColorSequenceKeypoint.new(0.8, Color3.fromRGB(60, 160, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 80, 255)),
+	})
+	winGrad.Parent = winStroke
+	task.spawn(function()
+		while win and win.Parent do
+			winGrad.Rotation = (winGrad.Rotation + 3) % 360
+			task.wait(0.03)
+		end
+	end)
 	local lim = Instance.new("UISizeConstraint")
 	lim.MaxSize = opts.MaxSize or Vector2.new(880, 540)
 	lim.Parent = win
