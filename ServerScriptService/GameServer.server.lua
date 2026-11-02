@@ -1,4 +1,3 @@
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -335,8 +334,22 @@ local function guarded(player, method, ...)
 end
 
 -- 5) Remotes
-local BOT_MODE_DIFFICULTY = { Bot = "Normal", BotEasy = "Easy", BotNormal = "Normal", BotHard = "Hard" }
-local BOT_NAMES = { Easy = "หุ่นฝึกซ้อม (ง่าย)", Normal = "หุ่นฝึกซ้อม", Hard = "หุ่นฝึกซ้อม (ยาก)" }
+local BOT_MODE_DIFFICULTY = { Bot = "Normal", BotEasy = "Easy", BotNormal = "Normal", BotHard = "Hard", BotHacker = "Hacker", BotMix = "Mix" }
+
+local function resolveBotDifficulty(key)
+	if key == "Mix" then
+		local pool = Config.BOT_MIX_POOL
+		if type(pool) ~= "table" or #pool == 0 then pool = { "Easy", "Normal", "Hard" } end
+		key = pool[math.random(#pool)]
+	end
+	local levels = Config.BOT_DIFFICULTY
+	local level = type(levels) == "table" and levels[key] or nil
+	if not level then
+		key = "Normal"
+		level = type(levels) == "table" and levels.Normal or nil
+	end
+	return key, level
+end
 
 local function queueImpl(player, mode, leaderId)
 	if mode == "Cancel" then
@@ -381,10 +394,15 @@ local function queueImpl(player, mode, leaderId)
 	if mode == "Bot" then
 		if waiting and waiting.player == player then waiting = nil end
 		Stats.Add(DataService.GetData(player), "QueueBot")
-		local difficulty = botDifficulty or "Normal"
-		local bot = { Name = BOT_NAMES[difficulty] or "หุ่นฝึกซ้อม", IsBot = true, Difficulty = difficulty }
+		local difficulty, level = resolveBotDifficulty(botDifficulty or "Normal")
+		local bot = { Name = (level and level.Name) or "หุ่นฝึกซ้อม", IsBot = true, Difficulty = difficulty }
 		local botLeader = Decks.Leaders[math.random(#Decks.Leaders)]
-		if not startMatch(player, leaderId, bot, botLeader, "Bot", function(m) m.BotDifficulty = difficulty end) then return false, "SERVER_ERROR" end
+		if not startMatch(player, leaderId, bot, botLeader, "Bot", function(m)
+			m.BotDifficulty = difficulty
+			local shield = level and tonumber(level.Shield) or 0
+			local side = m.sides[bot]
+			if shield > 0 and side then side.shield += shield end
+		end) then return false, "SERVER_ERROR" end
 		return true, "STARTED"
 	end
 

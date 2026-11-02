@@ -1,4 +1,3 @@
-
 -- StarterPlayerScripts/UIClient/FloatHUD.lua
 -- ปุ่มลอย + เมนูรองแบบ Pop-up (แทน LobbyUI ทั้งหมด ไม่มีหน้าเต็มจอ)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -368,7 +367,7 @@ local function startMode(mode)
 		queueTicket = ticket
 		task.delay(PVP_HINT_SEC, function()
 			if queueTicket == ticket and queueMode == "PvP" and not inMatch then
-				toast("ยังไม่เจอคู่ต่อสู้ กดซ้อมบอทได้เลย ระบบจะยกเลิกคิว PvP ให้", C.Orange)
+				toast("ยังไม่เจอคู่ต่อสู้ ลองเล่นกับบอทได้เลย ระบบจะยกเลิกคิว PvP ให้", C.Orange)
 			end
 		end)
 	end
@@ -388,36 +387,188 @@ local function togglePvP()
 	end
 end
 
+-- ===== Play panel: แท็บ บอท / PvP (1v1) =====
 local BOT_LEVELS = {
-	{ Mode = "BotEasy", Label = "ง่าย" },
-	{ Mode = "Bot", Label = "ปกติ" },
-	{ Mode = "BotHard", Label = "ยาก" },
+	{ Mode = "BotEasy", Key = "Easy", Label = "ง่าย", Color = C.Lime, Desc = "เล่นสบายๆ บางทีก็พลาด" },
+	{ Mode = "Bot", Key = "Normal", Label = "ปานกลาง", Color = C.Yellow, Desc = "บอทมาตรฐาน" },
+	{ Mode = "BotHard", Key = "Hard", Label = "ยาก", Color = C.Orange, Desc = "เลือกเป้าเก่ง ปิดเกมไว" },
+	{ Mode = "BotHacker", Key = "Hacker", Label = "แฮกเกอร์", Color = C.Red, Desc = "คิดไว เล่นโหด มีโล่เพิ่ม" },
+	{ Mode = "BotMix", Key = "Mix", Label = "สุ่มระดับ", Color = C.Purple, Desc = "สุ่มความยากใหม่ทุกแมตช์" },
 }
-local botLevelIndex = 2
-local function botLevelText()
-	return ("ระดับบอท: %s"):format(BOT_LEVELS[botLevelIndex].Label)
+local PVP_TYPES = {
+	{ Mode = "PvP", Label = "ออนไลน์", Color = C.Pink, Desc = "จับคู่กับผู้เล่นจริง" },
+	{ Label = "แรงค์", Color = C.Gray, Desc = "เร็วๆ นี้", Locked = true },
+}
+local MATCH_SIZES = {
+	{ Text = "1v1", Color = C.Blue },
+	{ Text = "1v2", Color = C.Gray },
+	{ Text = "1v3", Color = C.Gray },
+}
+local PLAY_BODY_H = 210
+local playTab, botLevelIndex, pvpIndex = "Bot", 2, 1
+
+local function hbox(parent, order, h)
+	local f = Instance.new("Frame")
+	f.BackgroundTransparency = 1
+	f.Size = UDim2.new(1, 0, 0, h)
+	f.LayoutOrder = order or 0
+	f.Parent = parent
+	return f
+end
+
+local function markSelected(b)
+	local s = b:FindFirstChildOfClass("UIStroke")
+	if s then s.Color = C.White; s.Thickness = 4 end
+end
+
+local function segment(parent, items, selected, onPick)
+	local n = #items
+	for i, it in items do
+		local h = Instance.new("Frame")
+		h.BackgroundTransparency = 1
+		h.Position = UDim2.new((i - 1) / n, 2, 0, 0)
+		h.Size = UDim2.new(1 / n, -4, 1, 0)
+		h.Parent = parent
+		local b = blobButton(h, it.Text, i == selected and it.Color or C.Gray, UDim2.fromScale(1, 1), function() onPick(i) end)
+		b.Position = UDim2.fromScale(0.5, 0.5)
+		if i == selected then markSelected(b) end
+	end
+end
+
+local function botInfo(key)
+	local list = Config.BOT_DIFFICULTY
+	return type(list) == "table" and list[key] or nil
+end
+
+local function botRewardText(lv)
+	if lv.Key == "Mix" then
+		local lo, hi
+		for _, k in (Config.BOT_MIX_POOL or {}) do
+			local info = botInfo(k)
+			local r = info and tonumber(info.Reward)
+			if r then lo = math.min(lo or r, r); hi = math.max(hi or r, r) end
+		end
+		if lo then return ("รางวัลชนะ: %d-%d เพชร"):format(lo, hi) end
+		return "รางวัลชนะ: ตามระดับที่สุ่มได้"
+	end
+	local info = botInfo(lv.Key)
+	return ("รางวัลชนะ: %d เพชร"):format(info and tonumber(info.Reward) or Config.REWARD_WIN_BOT or 0)
+end
+
+local function buildPlayList(body, items, selected, onPick)
+	local itemH, gap = 44, 6
+	local content = #items * (itemH + gap) - gap + 12
+	local sf = Instance.new("ScrollingFrame")
+	sf.BackgroundColor3 = C.Ink
+	sf.BackgroundTransparency = 0.4
+	sf.BorderSizePixel = 0
+	sf.Size = UDim2.new(0.42, -4, 1, 0)
+	sf.CanvasSize = UDim2.fromOffset(0, content)
+	sf.ScrollBarThickness = content > PLAY_BODY_H and 6 or 0
+	sf.ScrollingDirection = Enum.ScrollingDirection.Y
+	sf.Parent = body
+	corner(sf, UDim.new(0, 12))
+	local pad = Instance.new("UIPadding")
+	for _, k in { "PaddingTop", "PaddingBottom", "PaddingLeft", "PaddingRight" } do pad[k] = UDim.new(0, 6) end
+	pad.Parent = sf
+	local l = Instance.new("UIListLayout")
+	l.Padding = UDim.new(0, gap)
+	l.SortOrder = Enum.SortOrder.LayoutOrder
+	l.Parent = sf
+	for i, it in items do
+		local b = row(sf, i, it.Label, i == selected and it.Color or C.Gray, function() onPick(i, it) end, itemH)
+		if i == selected then markSelected(b) end
+	end
+end
+
+local function openPlay(owner)
+	if inMatch then return end
+	local panel = openPanel(nil, {
+		Title = "เลือกโหมดเล่น", Color = C.Lime, Width = 520,
+		Build = function(p)
+			local tabs = hbox(p, 1, 40)
+			local body = hbox(p, 2, PLAY_BODY_H)
+			local render
+			render = function()
+				for _, ch in tabs:GetChildren() do ch:Destroy() end
+				for _, ch in body:GetChildren() do ch:Destroy() end
+				local isBot = playTab == "Bot"
+				segment(tabs, { { Text = "บอท", Color = C.Lime }, { Text = "PvP", Color = C.Pink } }, isBot and 1 or 2, function(i)
+					local want = i == 1 and "Bot" or "PvP"
+					if want ~= playTab then playTab = want; render() end
+				end)
+
+				local items = isBot and BOT_LEVELS or PVP_TYPES
+				local sel = isBot and botLevelIndex or pvpIndex
+				buildPlayList(body, items, sel, function(i, picked)
+					if picked.Locked then toast("โหมดนี้ยังไม่เปิด เร็วๆ นี้!", C.Orange) return end
+					if isBot then botLevelIndex = i else pvpIndex = i end
+					render()
+				end)
+
+				local it = items[sel] or items[1]
+				local right = Instance.new("Frame")
+				right.BackgroundTransparency = 1
+				right.Position = UDim2.new(0.42, 4, 0, 0)
+				right.Size = UDim2.new(0.58, -4, 1, 0)
+				right.Parent = body
+				local rl = Instance.new("UIListLayout")
+				rl.Padding = UDim.new(0, 6)
+				rl.SortOrder = Enum.SortOrder.LayoutOrder
+				rl.HorizontalAlignment = Enum.HorizontalAlignment.Center
+				rl.Parent = right
+
+				local title, desc
+				if isBot then
+					local info = botInfo(it.Key)
+					if it.Key == "Mix" then
+						title = "คู่ต่อสู้: ???"
+					else
+						title = "คู่ต่อสู้: " .. ((info and info.Name) or ("บอท" .. it.Label))
+					end
+					desc = it.Desc .. "\n" .. botRewardText(it)
+				else
+					title = "PvP " .. it.Label
+					desc = it.Desc .. ("\nชนะ %d / แพ้ %d เพชร"):format(Config.REWARD_WIN_PVP or 0, Config.REWARD_LOSE_PVP or 0)
+				end
+				local t = label(right, title, it.Color, 26)
+				t.LayoutOrder = 1
+				t.TextXAlignment = Enum.TextXAlignment.Left
+				local d = label(right, desc, C.White, 34)
+				d.LayoutOrder = 2
+				d.TextXAlignment = Enum.TextXAlignment.Left
+
+				row(right, 3, "ผู้นำ: " .. leaderName(), C.Yellow, function(b)
+					local leaders = Decks.Leaders or {}
+					if #leaders <= 1 then return end
+					leaderIndex = leaderIndex % #leaders + 1
+					b.Text = "ผู้นำ: " .. leaderName()
+				end, 44, "Heart")
+
+				segment(hbox(right, 4, 34), MATCH_SIZES, 1, function(i)
+					if i ~= 1 then toast("โหมด 1v2 / 1v3 กำลังพัฒนา เร็วๆ นี้!", C.Orange) end
+				end)
+
+				local waitingPvP = not isBot and queueMode == "PvP"
+				local pb = row(right, 5, waitingPvP and "ยกเลิกหา" or "เล่น!", waitingPvP and C.Pink or C.Lime, function()
+					if isBot then
+						startMode(BOT_LEVELS[botLevelIndex].Mode)
+					elseif it.Locked then
+						toast("โหมดนี้ยังไม่เปิด เร็วๆ นี้!", C.Orange)
+					else
+						togglePvP()
+					end
+				end, 44, "Play")
+				Juice.wobble(pb, { Amp = 1, Rot = 3, Speed = 4 })
+			end
+			render()
+		end,
+	})
+	if panel then openOwner = owner end
 end
 
 local function openBattle(owner)
-	owner = owner or fabs.Battle
-	local leaders = Decks.Leaders or {}
-	openRadial(owner, {
-		{ Text = leaderName(), Color = C.Yellow, Icon = "Heart", Keep = true, OnClick = function(b)
-			if #leaders <= 1 then return end
-			leaderIndex = leaderIndex % #leaders + 1
-			local txt = b:FindFirstChildOfClass("TextLabel")
-			if txt then txt.Text = leaderName() else b.Text = leaderName() end
-		end },
-		{ Text = botLevelText(), Color = C.Lime, Icon = "Up", Keep = true, OnClick = function(b)
-			botLevelIndex = botLevelIndex % #BOT_LEVELS + 1
-			local txt = b:FindFirstChildOfClass("TextLabel")
-			if txt then txt.Text = botLevelText() else b.Text = botLevelText() end
-		end },
-		{ Text = "ซ้อมบอท", Color = C.Lime, Icon = "Play", OnClick = function() startMode(BOT_LEVELS[botLevelIndex].Mode) end },
-		{ Text = queueMode == "PvP" and "ยกเลิกหา" or "PvP ออนไลน์", Color = C.Pink, Icon = "Lightning", OnClick = togglePvP },
-		{ Text = ("หอคอย ชั้น %d"):format(profile and profile.TowerFloor or 1), Color = C.Orange, Icon = "Up",
-			OnClick = function() startMode("Tower") end },
-	}, 150, 125, 235) -- กางออกทางซ้ายของปุ่ม
+	openPlay(owner or fabs.Battle)
 end
 
 -- ===== Gacha =====
@@ -785,6 +936,7 @@ local function openMore(owner)
 			if nq > 0 then Juice.wobble(qb, { Amp = 0, Rot = 4, Speed = 5 }) end
 			row(p, 2, "สถิติ", C.Blue, function() openStats(owner) end, nil, "Up")
 			row(p, 3, "ฟาร์มเพชร", C.Orange, function() openFarms(owner) end, nil, "Coin")
+			row(p, 5, ("หอคอย ชั้น %d"):format(profile and profile.TowerFloor or 1), C.Orange, function() startMode("Tower") end, nil, "Up")
 			row(p, 4, "ท่าเต้น (200+)", C.Pink, function()
 				closePopup()
 				local DanceEmoteUI = script.Parent:FindFirstChild("DanceEmoteUI")
@@ -1045,7 +1197,6 @@ function FloatHUD.Refresh()
 end
 
 return FloatHUD
-
 -- 🔗 เชื่อมต่อเมนูกับ GlueLobbyHUD
 _G.GlueMenu = _G.GlueMenu or {}
 _G.GlueMenu.deck = function()
