@@ -373,9 +373,6 @@ local function queueImpl(player, mode, leaderId)
 		return true, "STARTED"
 	end
 
-	if mode == "Bot" then
-		if waiting and waiting.player == player then waiting = nil end
-		Stats.Add(DataService.GetData(player), "QueueBot")
 	-- Bot levels: "Bot" (old = Medium), BotEasy / BotMedium / BotHard / BotHacker / BotMix
 	local botLevel = (mode == "Bot" and "Medium") or (typeof(mode) == "string" and mode:match("^Bot(%a+)$"))
 	if botLevel then

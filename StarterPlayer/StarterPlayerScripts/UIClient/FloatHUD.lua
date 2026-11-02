@@ -1295,9 +1295,10 @@ function FloatHUD.Refresh()
 	end)
 end
 
-return FloatHUD
 -- 🔗 เชื่อมต่อเมนูกับ GlueLobbyHUD
 _G.GlueMenu = _G.GlueMenu or {}
 _G.GlueMenu.deck = function()
 	if DeckBuilder and DeckBuilder.Open then DeckBuilder.Open() end
 end
+
+return FloatHUD
