@@ -143,6 +143,15 @@ local ReportResult = glueRemote("RemoteFunction", "ReportResult")
 local QuickPlay = glueRemote("RemoteEvent", "QuickPlay")
 local BuyPack = glueRemote("RemoteFunction", "BuyPack")
 local GetCollection = glueRemote("RemoteFunction", "GetCollection")
+
+-- ⚔️ PvP Online Remotes
+local JoinPvPQueue = glueRemote("RemoteEvent", "JoinPvPQueue")
+local LeavePvPQueue = glueRemote("RemoteEvent", "LeavePvPQueue")
+local StartPvP = glueRemote("RemoteEvent", "StartPvP")
+local PvPAction = glueRemote("RemoteEvent", "PvPAction")
+local PvPActionRelay = glueRemote("RemoteEvent", "PvPActionRelay")
+local PvPMatchEnd = glueRemote("RemoteEvent", "PvPMatchEnd")
+
 glueFolder.Parent = ReplicatedStorage
 
 -- โฟลเดอร์ Remotes ทั่วไป (สำหรับ UI ระบบโปรไฟล์ / แจ้งเตือน)
@@ -574,4 +583,157 @@ SaveDeck.OnServerInvoke = function(player, ids)
 	return true
 end
 
-print("[GlueCardServer] ✅ ระบบดวลการ์ดกาว + ความยากบอท + ระบบเหรียญ Gold พร้อมทำงาน!")
+
+---------------------------------------------------------------------
+-- ⚔️ 8) ระบบจับคู่และจัดการแมตช์ PvP 1v1 ออนไลน์แบบ Real-time
+---------------------------------------------------------------------
+local pvpQueue = {}          -- คิวรอ { player }
+local activePvPMatches = {}  -- [matchId] = { id, p1, p2, turnPlayer, startedAt, ended }
+local playerToPvP = {}       -- [player] = matchId
+
+local PVP_CONFIG = {
+	TURN_TIME = 35,
+	WIN_GOLD = 150,
+	LOSE_GOLD = 40,
+}
+
+local function endPvPMatch(matchId, winnerPlayer, reason)
+	local m = activePvPMatches[matchId]
+	if not m or m.ended then return end
+	m.ended = true
+
+	local p1, p2 = m.p1, m.p2
+	playerToPvP[p1] = nil
+	playerToPvP[p2] = nil
+	activePvPMatches[matchId] = nil
+
+	local loserPlayer = (winnerPlayer == p1) and p2 or p1
+
+	-- บันทึกและมอบรางวัลผู้ชนะ
+	if winnerPlayer and winnerPlayer.Parent then
+		grantReward(winnerPlayer, PVP_CONFIG.WIN_GOLD, true, 6)
+		PvPMatchEnd:FireClient(winnerPlayer, { won = true, gold = PVP_CONFIG.WIN_GOLD, reason = reason or "ชนะการดวล 1v1!" })
+	end
+
+	-- บันทึกและมอบรางวัลปลอบใจผู้แพ้
+	if loserPlayer and loserPlayer.Parent then
+		grantReward(loserPlayer, PVP_CONFIG.LOSE_GOLD, false, 6)
+		PvPMatchEnd:FireClient(loserPlayer, { won = false, gold = PVP_CONFIG.LOSE_GOLD, reason = reason or "แพ้การดวล 1v1" })
+	end
+end
+
+local function startPvPMatch(p1, p2)
+	local matchId = HttpService:GenerateGUID(false)
+	local firstPlayer = (math.random() > 0.5) and p1 or p2
+
+	local m = {
+		id = matchId,
+		p1 = p1,
+		p2 = p2,
+		turnPlayer = firstPlayer,
+		startedAt = os.clock(),
+		ended = false,
+	}
+	activePvPMatches[matchId] = m
+	playerToPvP[p1] = matchId
+	playerToPvP[p2] = matchId
+
+	-- แจ้งเริ่มแมตช์ให้ทั้งสองฝั่งพร้อมข้อมูลคู่ต่อสู้
+	StartPvP:FireClient(p1, {
+		matchId = matchId,
+		yourSide = "player",
+		foeSide = "enemy",
+		isFirst = (firstPlayer == p1),
+		turnTime = PVP_CONFIG.TURN_TIME,
+		opponent = {
+			UserId = p2.UserId,
+			Name = p2.Name,
+			DisplayName = p2.DisplayName,
+		},
+	})
+
+	StartPvP:FireClient(p2, {
+		matchId = matchId,
+		yourSide = "player",
+		foeSide = "enemy",
+		isFirst = (firstPlayer == p2),
+		turnTime = PVP_CONFIG.TURN_TIME,
+		opponent = {
+			UserId = p1.UserId,
+			Name = p1.Name,
+			DisplayName = p1.DisplayName,
+		},
+	})
+end
+
+-- ผู้เล่นกดเข้าคิวหาคู่ดวล 1v1
+JoinPvPQueue.OnServerEvent:Connect(function(player)
+	if playerToPvP[player] then return end
+	for _, p in ipairs(pvpQueue) do
+		if p == player then return end
+	end
+
+	table.insert(pvpQueue, player)
+
+	-- ถ้ามีผู้เล่นรอในคิวตั้งแต่ 2 คนขึ้นไป จับคู่ทันที
+	if #pvpQueue >= 2 then
+		local p1 = table.remove(pvpQueue, 1)
+		local p2 = table.remove(pvpQueue, 1)
+		if p1.Parent and p2.Parent and p1 ~= p2 then
+			startPvPMatch(p1, p2)
+		else
+			if p1.Parent then table.insert(pvpQueue, 1, p1) end
+			if p2.Parent then table.insert(pvpQueue, 1, p2) end
+		end
+	end
+end)
+
+-- ผู้เล่นกดยกเลิกการหาคู่
+LeavePvPQueue.OnServerEvent:Connect(function(player)
+	for i = #pvpQueue, 1, -1 do
+		if pvpQueue[i] == player then
+			table.remove(pvpQueue, i)
+			break
+		end
+	end
+end)
+
+-- ส่งต่อคำสั่ง (Action Relay) ระหว่าง 2 เครื่อง
+PvPAction.OnServerEvent:Connect(function(player, matchId, actionType, actionData)
+	local m = activePvPMatches[matchId]
+	if not m or m.ended then return end
+
+	local opponent = (player == m.p1) and m.p2 or m.p1
+	if not opponent or not opponent.Parent then return end
+
+	if actionType == "EndTurn" then
+		m.turnPlayer = opponent
+	elseif actionType == "Surrender" then
+		endPvPMatch(matchId, opponent, "คู่ต่อสู้ขอยอมแพ้ 🏳️")
+		return
+	elseif actionType == "HeroDead" then
+		endPvPMatch(matchId, opponent, "โค่นฮีโร่สำเร็จ! 💀")
+		return
+	end
+
+	-- ส่งต่อให้อีกฝ่ายแสดงผลแบบ Real-time
+	PvPActionRelay:FireClient(opponent, matchId, actionType, actionData)
+end)
+
+-- จัดการเมื่อผู้เล่นหลุดออกจากเกมระหว่างดวล
+Players.PlayerRemoving:Connect(function(player)
+	for i = #pvpQueue, 1, -1 do
+		if pvpQueue[i] == player then table.remove(pvpQueue, i) end
+	end
+
+	local matchId = playerToPvP[player]
+	if matchId then
+		local m = activePvPMatches[matchId]
+		if m and not m.ended then
+			local opponent = (player == m.p1) and m.p2 or m.p1
+			endPvPMatch(matchId, opponent, "คู่ต่อสู้ออกจากเกม 🏃💨")
+		end
+	end
+end)
+
+print("[GlueCardServer] ✅ ระบบดวลการ์ดกาว + PvP ออนไลน์ 1v1 + ระบบเหรียญ Gold พร้อมทำงาน!")

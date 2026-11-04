@@ -218,6 +218,7 @@ local function centerOf(g) return g.AbsolutePosition + g.AbsoluteSize / 2 end
 local State = {
 	current = "player", turnCount = 0, busy = false, gameOver = false,
 	chaos = 2, selected = nil, uid = 0, suggestEnd = false, sides = {},
+	isPvP = false, pvpMatchId = nil, pvpOpponent = nil,
 }
 
 local function newSide(name)
@@ -1594,6 +1595,17 @@ local function playCard(side, card)
 		task.wait(0.3)
 	end
 	addGlue(side, 5)
+	if side == "player" and State.isPvP then
+		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("GlueCardRemotes")
+		local pvpAction = folder and folder:FindFirstChild("PvPAction")
+		if pvpAction then
+			pvpAction:FireServer(State.pvpMatchId, "PlayCard", {
+				slot = card.slot,
+				cardId = def.id,
+				isSpell = (def.kind == "Spell"),
+			})
+		end
+	end
 	State.busy = false
 	refreshInteractivity()
 	checkGameOver()
@@ -2031,7 +2043,8 @@ local function startTurn(side)
 	if side == "player" then
 		banner("ตาคุณแล้ว! 😎", pick(LINES.turnPlayer), COLORS.player)
 	else
-		banner("ตาบอทลุงกาว 🤖", pick(LINES.turnEnemy), COLORS.enemy)
+		local foeName = State.isPvP and (State.pvpOpponent and State.pvpOpponent.DisplayName or "คู่ต่อสู้") or (State.currentBot and State.currentBot.name or "บอทลุงกาว 🤖")
+		banner("ตาของ " .. foeName, pick(LINES.turnEnemy), COLORS.enemy)
 	end
 	playSound("summon", side == "player" and 1.2 or 0.8, 0.4)
 	task.wait(1.1)
@@ -2056,7 +2069,7 @@ local function startTurn(side)
 	if State.gameId ~= gid or State.gameOver then return end
 	State.busy = false
 	refreshInteractivity()
-	if side == "enemy" then task.spawn(botTurn, gid) end
+	if side == "enemy" and not State.isPvP then task.spawn(botTurn, gid) end
 end
 
 local function finishTurn(side)
@@ -2065,6 +2078,13 @@ local function finishTurn(side)
 	State.selected = nil
 	for _, u in ipairs(getUnits(side)) do
 		if u.frozen > 0 then u.frozen -= 1; updateUnitUI(u) end
+	end
+	if side == "player" and State.isPvP then
+		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("GlueCardRemotes")
+		local pvpAction = folder and folder:FindFirstChild("PvPAction")
+		if pvpAction then
+			pvpAction:FireServer(State.pvpMatchId, "EndTurn", {})
+		end
 	end
 	refreshInteractivity()
 	task.wait(0.2)
@@ -2672,6 +2692,16 @@ do
 		Lobby.busy = true
 		Lobby.open = false
 		player:SetAttribute("GlueInDuel", false)
+		if State.isPvP then
+			local folder = game:GetService("ReplicatedStorage"):FindFirstChild("GlueCardRemotes")
+			local pvpAction = folder and folder:FindFirstChild("PvPAction")
+			if pvpAction then pvpAction:FireServer(State.pvpMatchId, "Surrender", {}) end
+		end
+		State.isPvP = false
+		State.pvpMatchId = nil
+		State.pvpOpponent = nil
+		local thumb = Hero.enemy.avatar:FindFirstChild("Thumb")
+		if thumb then thumb:Destroy() end
 		Remotes.LeaveTable:FireServer()
 		fadeTo(0, 0.3)
 		State.gameId += 1
@@ -2786,9 +2816,124 @@ do
 		task.delay(2.5, function() exitBtn.label.Text = "🚪 ออกจากโต๊ะ" end)
 	end)
 
+
+	-- ⚔️ PvP Handlers
+	local function startPvPGame(data)
+		if Lobby.busy then return end
+		Lobby.busy = true
+		State.isPvP = true
+		State.pvpMatchId = data.matchId
+		State.pvpOpponent = data.opponent
+		player:SetAttribute("GlueInDuel", true)
+		setLocked(true)
+		fadeTo(0, 0.25)
+		gui.Enabled = true
+		Lobby.open = true
+
+		-- ตั้งค่าอวาตาร์คู่ต่อสู้
+		if Hero.enemy.nameLabel then
+			Hero.enemy.nameLabel.Text = data.opponent.DisplayName .. " ⚔️"
+		end
+		task.spawn(function()
+			local ok, img = pcall(Players.GetUserThumbnailAsync, Players, data.opponent.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+			if ok and img then
+				Hero.enemy.avatar.Text = ""
+				local imgLabel = Hero.enemy.avatar:FindFirstChild("Thumb") or make("ImageLabel", {
+					Name = "Thumb", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 3, Parent = Hero.enemy.avatar,
+				})
+				corner(imgLabel, UDim.new(1, 0))
+				imgLabel.Image = img
+			end
+		end)
+
+		resetGame()
+
+		if data.isFirst then
+			State.current = "player"
+			State.busy = false
+			banner("⚔️ ดวลสด 1v1!", "คุณได้เริ่มก่อน! ลุยยย!", COLORS.gold, 1.4)
+		else
+			State.current = "enemy"
+			State.busy = true
+			banner("⚔️ ดวลสด 1v1!", (data.opponent.DisplayName or "คู่ต่อสู้") .. " ได้เริ่มก่อน!", COLORS.enemy, 1.4)
+		end
+
+		refreshInteractivity()
+		fadeTo(1, 0.4)
+		Lobby.busy = false
+	end
+
+	local function onPvPActionReceived(matchId, actionType, data)
+		if not State.isPvP or State.pvpMatchId ~= matchId or State.gameOver then return end
+
+		if actionType == "PlayCard" then
+			local def = CARDS[data.cardId]
+			if def then
+				if data.isSpell then
+					if def.spell then def.spell("enemy") end
+				else
+					summonUnit("enemy", def, data.slot or getEmptySlot("enemy") or 1)
+				end
+				updateHeroUI()
+			end
+		elseif actionType == "Attack" then
+			local attacker = State.sides.enemy.board[data.attackerSlot]
+			local target = (data.targetType == "hero") and "hero" or (data.targetSlot and State.sides.player.board[data.targetSlot])
+			if attacker and target then
+				task.spawn(performAttack, attacker, target)
+			end
+		elseif actionType == "Ult" then
+			task.spawn(useUltimate, "enemy")
+		elseif actionType == "EndTurn" then
+			task.spawn(startTurn, "player")
+		elseif actionType == "Taunt" then
+			speech(Hero.enemy.avatar, data.text or "555+ ปั่นจัด", COLORS.enemy, true)
+			burst(heroPos("enemy"), { "😜", "🔥" }, 6, 80)
+		end
+	end
+
+	local function onPvPMatchEndReceived(res)
+		State.gameOver = true
+		State.busy = true
+		local won = res.won == true
+		if won then
+			banner("🏆 ชนะการดวล!", (res.reason or "คุณชนะการดวล 1v1!") .. " รับ +" .. (res.gold or 150) .. " Gold", COLORS.gold, 3.5)
+			burst(centerOf(Main), { "👑", "✨", "💰" }, 30, 250)
+			playSound("win", 1, 0.8)
+		else
+			banner("💀 พ่ายแพ้!", (res.reason or "แพ้การดวล") .. " รับ +" .. (res.gold or 40) .. " Gold", COLORS.atk, 3.5)
+			playSound("oof", 1, 0.8)
+		end
+		task.delay(4, function()
+			closeTable(true)
+		end)
+	end
+
 	Remotes.OpenTable.OnClientEvent:Connect(function(tbl, options)
 		task.spawn(openTable, typeof(tbl) == "Instance" and tbl or nil, typeof(options) == "table" and options or {})
 	end)
+
+	local startPvPRemote = Remotes:FindFirstChild("StartPvP")
+	if startPvPRemote then
+		startPvPRemote.OnClientEvent:Connect(function(data)
+			task.spawn(startPvPGame, data)
+		end)
+	end
+
+	local pvpRelayRemote = Remotes:FindFirstChild("PvPActionRelay")
+	if pvpRelayRemote then
+		pvpRelayRemote.OnClientEvent:Connect(function(matchId, actionType, data)
+			task.spawn(onPvPActionReceived, matchId, actionType, data)
+		end)
+	end
+
+	local pvpEndRemote = Remotes:FindFirstChild("PvPMatchEnd")
+	if pvpEndRemote then
+		pvpEndRemote.OnClientEvent:Connect(function(res)
+			task.spawn(onPvPMatchEndReceived, res)
+		end)
+	end
+
 end
 
 ---------------------------------------------------------------------

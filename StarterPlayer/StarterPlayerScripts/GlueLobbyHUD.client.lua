@@ -469,6 +469,18 @@ local function startMode(mode)
 	if MenuKit and MenuKit.close then MenuKit.close() end
 
 	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
+	if mode == "PvP" then
+		local joinRemote = folder and folder:FindFirstChild("JoinPvPQueue")
+		if joinRemote then
+			queueMode = "PvP"
+			toast("🔍 กำลังค้นหาคู่ต่อสู้ 1v1... (กดอีกครั้งเพื่อยกเลิก)", Color3.fromRGB(70, 180, 255))
+			joinRemote:FireServer()
+		else
+			toast("⚠️ ยังไม่พบ JoinPvPQueue Remote", C.glue)
+		end
+		return
+	end
+
 	local remote = folder and folder:FindFirstChild("QuickPlay")
 	if remote then
 		local diff = "Medium"
@@ -478,7 +490,6 @@ local function startMode(mode)
 		elseif mode == "BotHacker" then diff = "Hacker"
 		elseif mode == "BotMix" then diff = "Mix"
 		elseif mode == "Tower" then diff = "Tower"
-		elseif mode == "PvP" then diff = "Hard"
 		end
 
 		toast("⚔️ กำลังเริ่มดวล (" .. tostring(mode) .. ")", C.gold)
@@ -489,15 +500,12 @@ local function startMode(mode)
 end
 
 local function togglePvP()
+	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
 	if queueMode == "PvP" then
-		if MenuKit and MenuKit.close then MenuKit.close() end
-		if Net then
-			local ok = Net.invokeLocked("queue", "Queue", "Cancel")
-			if ok then
-				queueMode = nil
-				toast("ยกเลิกการหาคู่ต่อสู้แล้ว", C.sub)
-			end
-		end
+		local leaveRemote = folder and folder:FindFirstChild("LeavePvPQueue")
+		if leaveRemote then leaveRemote:FireServer() end
+		queueMode = nil
+		toast("❌ ยกเลิกการหาคู่ต่อสู้แล้ว", C.sub)
 	else
 		startMode("PvP")
 	end
@@ -1045,6 +1053,7 @@ end
 local function syncDuel()
 	local inDuel = player:GetAttribute("GlueInDuel") == true
 	if inDuel then
+		queueMode = nil
 		closeSettings()
 		if MenuKit and MenuKit.close then MenuKit.close() end
 		gui.Enabled = false
