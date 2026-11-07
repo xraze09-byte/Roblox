@@ -1,1112 +1,1644 @@
+--!strict
 --[[
-	🏛️ GlueLobbyHUD — สุดยอด HUD รวมระบบครบวงจร
-	• ล็อบบี้สไตล์กาวสุดสวย: ขอบรุ้งหมุนได้, เลเวล, แถบ XP, ฉายา, คำคมกวนๆ
-	• โปรไฟล์ 3D (ProfilePanel) กดดูของตัวเอง หรือ แตะตัวผู้เล่นอื่นในแมพ (PlayerTap)
-	• แผงเลือกโหมดดวล (PlayPanel): บอท 5 ระดับ (Easy, Medium, Hard, Hacker, Mix) + โหมด Tower + PvP 1v1
-	• ปุ่มดวลด่วน (QuickPlay): 1-Click ลงโต๊ะสู้บอททันที
-	• คลังจัดเด็ค (DeckBuilder), ร้านค้า/ฟาร์ม, เควสต์ประจำวัน
-	• หน้าต่างตั้งค่าสีรุ้ง: เสียง BGM, SFX, จอสั่น, หมุนจอ
-	• สลับหน้าจออัตโนมัติเมื่อเริ่ม/จบการดวล (GlueInDuel)
+	🎨 GlueLobbyHUD.client.lua — Anti-AI Slop "Manga Chaos Meets Tactile Arcade"
+	• ชุดสี Manga Ink & Arcade Pop ตรงตามสเปก 100%
+	• ขอบ Comic Outlines (UIStroke 3px) + เงาทึบซ้อนหลัง (Tactile 3D Arcade Offset Shadow)
+	• ระบบสปริง Micro-Interactions (Hover 1.06x Back 0.2s / Click Punch 0.9x 0.08s)
+	• Top-Left: กรอบโปรไฟล์ขอบรุ้งหมุนได้ + ป้ายเลเวลทอง + หลอด XP ชมพูกาว + ป้าย Gold เด้งได้เปิดร้านค้าทันที
+	• Bottom-Center: ด็อกปุ่มต่อสู้คู่ (⚡ ดวลด่วน! 1-Click & ⚔️ เลือกโหมด)
+	• Right-Center: แถบเมนูลัดแนวตั้ง (🗃️ คลังการ์ด, 🛒 ร้านค้า, 📜 เควสต์, ⚙️ ตั้งค่า)
+	• โมดอลครบชุด:
+	  1) 🛒 ร้านซองการ์ดกาว (เขย่าซอง -> ฉีกประกายไฟ -> การ์ด 3 ใบหมุนลอยขึ้นตาม Rarity)
+	  2) 🗃️ อัลบั้มคลังการ์ดกาว 26 ใบ (ใบที่มีแสดงสีสดใส + จำนวน x1, x2 / ใบที่ไม่มีแสดงเงาดำ ❓ + หน้าต่างดูรายละเอียด)
+	  3) ⚔️ หน้าต่างเลือกโหมด: แท็บบอท 5 ระดับ + แท็บ PvP (จับคู่ 1v1 ได้เงิน & Custom Mode เลือกคนสู้เจาะจง 0 Gold!)
+	• Auto HUD Transition: สไลด์เก็บออกนอกจออัตโนมัติเมื่อ GlueInDuel = true และสไลด์กลับพร้อมอัปเดตเหรียญทันที
 ]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
-local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-do
-	local old = playerGui:FindFirstChild("GlueLobbyHUD")
+
+-- ลบ HUD เก่าถ้ามีค้าง
+for _, oldName in ipairs({ "GlueLobbyHUD", "FloatHUD" }) do
+	local old = playerGui:FindFirstChild(oldName)
 	if old then old:Destroy() end
 end
 
----------------------------------------------------------------------
--- 📦 โมดูลระบบ (โหลดแบบปลอดภัย Failsafe)
----------------------------------------------------------------------
-local UIClient = script.Parent:FindFirstChild("UIClient")
-local function tryReq(name)
-	local m = UIClient and UIClient:FindFirstChild(name)
-	if not m then return nil end
-	local ok, res = pcall(require, m)
-	if ok then return res end
-	warn("[GlueHUD] โหลด " .. name .. " ไม่สำเร็จ:", res)
-	return nil
-end
-
-local ProfilePanel = tryReq("ProfilePanel")
-local PlayPanel = tryReq("PlayPanel")
-local PlayerTap = tryReq("PlayerTap")
-local DeckBuilder = tryReq("DeckBuilder")
-local MenuKit = tryReq("MenuKit")
-local Net = tryReq("Net")
-local MatchUI = tryReq("MatchUI")
-local TableCamera = tryReq("TableCamera")
+local remotes = ReplicatedStorage:WaitForChild("GlueCardRemotes")
+local QuickPlay = remotes:WaitForChild("QuickPlay") :: RemoteEvent
+local BuyPack = remotes:WaitForChild("BuyPack") :: RemoteFunction
+local GetCollection = remotes:WaitForChild("GetCollection") :: RemoteFunction
+local ClaimQuest = remotes:WaitForChild("ClaimQuest") :: RemoteFunction
+local ProfileChanged = remotes:WaitForChild("ProfileChanged") :: RemoteEvent
+local JoinPvPQueue = remotes:WaitForChild("JoinPvPQueue") :: RemoteEvent
+local LeavePvPQueue = remotes:WaitForChild("LeavePvPQueue") :: RemoteEvent
+local StartPvP = remotes:WaitForChild("StartPvP") :: RemoteEvent
+local SendCustomChallenge = remotes:WaitForChild("SendCustomChallenge") :: RemoteEvent
+local IncomingCustomChallenge = remotes:WaitForChild("IncomingCustomChallenge") :: RemoteEvent
+local RespondCustomChallenge = remotes:WaitForChild("RespondCustomChallenge") :: RemoteEvent
 
 ---------------------------------------------------------------------
--- ⚙️ ค่าพื้นฐาน
+-- 🎨 1.1 ชุดสี Manga Chaos Arcade Palette (Anti-AI Slop)
 ---------------------------------------------------------------------
-local DEFAULTS = { GlueBGM = 1, GlueSFX = 1, GlueShake = true, GlueRotate = true }
-for k, v in pairs(DEFAULTS) do
-	if player:GetAttribute(k) == nil then player:SetAttribute(k, v) end
-end
-
-local C = {
-	panel = Color3.fromRGB(28, 24, 48),
-	sub = Color3.fromRGB(195, 190, 225),
-	gold = Color3.fromRGB(255, 210, 60),
-	glue = Color3.fromRGB(255, 80, 200),
-	on = Color3.fromRGB(80, 220, 120),
-	off = Color3.fromRGB(70, 65, 95),
-	dark = Color3.fromRGB(15, 12, 25),
-	white = Color3.new(1, 1, 1),
-	blue = Color3.fromRGB(70, 140, 255),
-	purple = Color3.fromRGB(150, 90, 255),
+local Palette = {
+	InkDeep = Color3.fromRGB(18, 14, 28),
+	InkPanel = Color3.fromRGB(28, 24, 46),
+	InkLight = Color3.fromRGB(44, 38, 72),
+	Gold = Color3.fromRGB(255, 214, 10),
+	Slime = Color3.fromRGB(0, 240, 160),
+	Magenta = Color3.fromRGB(255, 64, 168),
+	Crimson = Color3.fromRGB(255, 59, 86),
+	Cyan = Color3.fromRGB(56, 175, 255),
+	White = Color3.fromRGB(255, 255, 255),
+	Muted = Color3.fromRGB(175, 170, 205),
 }
 
-local RAINBOW = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
-	ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 170, 40)),
-	ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 60)),
-	ColorSequenceKeypoint.new(0.6, Color3.fromRGB(60, 255, 120)),
-	ColorSequenceKeypoint.new(0.8, Color3.fromRGB(60, 160, 255)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 80, 255)),
+local RarityStyle: { [string]: { color: Color3, label: string, badgeBg: Color3 } } = {
+	Common = { color = Color3.fromRGB(190, 198, 215), label = "⚪ COMMON", badgeBg = Color3.fromRGB(65, 70, 88) },
+	Rare = { color = Palette.Cyan, label = "🔵 RARE", badgeBg = Color3.fromRGB(20, 75, 140) },
+	Legendary = { color = Palette.Gold, label = "🟡 LEGENDARY", badgeBg = Color3.fromRGB(130, 85, 10) },
+	Glue = { color = Palette.Magenta, label = "🟣 GLUE RARE", badgeBg = Color3.fromRGB(125, 20, 95) },
+}
+
+local RAINBOW_SEQ = ColorSequence.new({
+	ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 59, 86)),
+	ColorSequenceKeypoint.new(0.20, Color3.fromRGB(255, 214, 10)),
+	ColorSequenceKeypoint.new(0.45, Color3.fromRGB(0, 240, 160)),
+	ColorSequenceKeypoint.new(0.70, Color3.fromRGB(56, 175, 255)),
+	ColorSequenceKeypoint.new(0.90, Color3.fromRGB(255, 64, 168)),
+	ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 59, 86)),
 })
 
-local RANKS = {
-	{ wins = 0, name = "มือใหม่หัดกาว 🐣", color = Color3.fromRGB(130, 135, 145) },
-	{ wins = 3, name = "เด็กปั่นประจำซอย 🛵", color = Color3.fromRGB(45, 135, 255) },
-	{ wins = 10, name = "เซียนกาวตราช้าง 🧪", color = Color3.fromRGB(255, 80, 200) },
-	{ wins = 25, name = "จอมปั่นแห่งจักรวาล 🌀", color = Color3.fromRGB(255, 190, 40) },
-	{ wins = 50, name = "เทพเจ้าแห่งความกาว 👑", rainbow = true },
-}
-
-local QUIPS = {
-	"วันนี้กาวหรือยัง? 🧪", "หล่อสุดในเซิร์ฟ 😎", "ลุงกาวรออยู่ที่โต๊ะนะ 🤖",
-	"อย่าจิ้มโปรไฟล์บ่อย เดี๋ยวช้ำ 😣", "ไปดวลได้แล้ว! 🃏", "แบตจะหมดแล้ว 🔋",
-	"เปิดโปรไฟล์ 3D ให้ดูแล้วนะ ✨",
-}
-
-local MENU = {
-	{ id = "deck", icon = "🗃️", text = "คลังการ์ด", color = Color3.fromRGB(70, 140, 255) },
-	{ id = "shop", icon = "🛒", text = "ร้านค้า", color = Color3.fromRGB(255, 170, 40) },
-	{ id = "quest", icon = "📜", text = "เควสต์", color = Color3.fromRGB(80, 200, 120) },
-	{ id = "settings", icon = "⚙️", text = "ตั้งค่า", color = Color3.fromRGB(150, 110, 230) },
-}
+-- ตั้งค่าเริ่มต้น
+if player:GetAttribute("GlueBGM") == nil then player:SetAttribute("GlueBGM", 1) end
+if player:GetAttribute("GlueSFX") == nil then player:SetAttribute("GlueSFX", 1) end
+if player:GetAttribute("GlueShake") == nil then player:SetAttribute("GlueShake", true) end
 
 ---------------------------------------------------------------------
--- 🧰 Helpers
+-- 🔊 ระบบเสียงคลิก Tactile Arcade SFX
 ---------------------------------------------------------------------
-local function pick(t) return t[math.random(1, #t)] end
-
-local function tween(obj, t, props, style, dir)
-	local tw = TweenService:Create(obj, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
-	tw:Play()
-	return tw
-end
-
-local function make(className, props)
-	local inst = Instance.new(className)
-	for k, v in pairs(props or {}) do
-		if k ~= "Parent" then inst[k] = v end
-	end
-	if props and props.Parent then inst.Parent = props.Parent end
-	return inst
-end
-
-local function corner(p, r) return make("UICorner", { CornerRadius = r or UDim.new(0, 12), Parent = p }) end
-
-local function stroke(p, color, thick, transp)
-	return make("UIStroke", { Color = color, Thickness = thick or 2, Transparency = transp or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = p })
-end
-
-local function label(props)
-	local p = { BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextColor3 = C.white, TextScaled = true, Text = "", BorderSizePixel = 0 }
-	for k, v in pairs(props) do p[k] = v end
-	return make("TextLabel", p)
-end
-
-local spinning = {}
-local function rainbowOn(st, speed)
-	local g = make("UIGradient", { Color = RAINBOW, Parent = st })
-	table.insert(spinning, { g = g, speed = speed or 150 })
-	return g
-end
-
-local function sfx(id, pitch, vol)
-	local mul = player:GetAttribute("GlueSFX") or 1
-	if mul <= 0 then return end
-	local s = make("Sound", { SoundId = id, Volume = (vol or 0.4) * mul, PlaybackSpeed = pitch or 1, Parent = SoundService })
+local function playSFX(id: string, pitch: number?, vol: number?)
+	if (player:GetAttribute("GlueSFX") or 1) <= 0 then return end
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.PlaybackSpeed = pitch or 1
+	s.Volume = (vol or 0.45) * (player:GetAttribute("GlueSFX") or 1)
+	s.Parent = SoundService
 	s:Play()
-	Debris:AddItem(s, 3)
+	task.delay(2, function()
+		if s then s:Destroy() end
+	end)
 end
-local function click(p) sfx("rbxasset://sounds/clickfast.wav", p or 1, 0.4) end
-local function hoverSfx() sfx("rbxasset://sounds/button.wav", 1.8, 0.12) end
 
-local function punch(obj, amt)
-	local sc = obj:FindFirstChild("Punch") or make("UIScale", { Name = "Punch", Parent = obj })
-	sc.Scale = amt or 1.25
-	tween(sc, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+local function clickSFX()
+	playSFX("rbxassetid://6895079853", math.random(96, 106) / 100, 0.4)
 end
 
 ---------------------------------------------------------------------
--- 🖥️ Root + ย่อ/ขยายตามขนาดจอ
+-- 🧱 ตัวช่วยสร้าง Tactile Squircle, Comic Outlines & Spring Button
 ---------------------------------------------------------------------
-local gui = make("ScreenGui", {
-	Name = "GlueLobbyHUD", ResetOnSpawn = false, IgnoreGuiInset = false,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 5, Parent = playerGui,
-})
+local function addCorner(parent: Instance, radius: number)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = parent
+	return c
+end
 
-local scales = {}
-local function autoScale(obj)
-	local s = make("UIScale", { Parent = obj })
-	table.insert(scales, s)
+local function addStroke(parent: Instance, color: Color3, thickness: number)
+	local s = Instance.new("UIStroke")
+	s.Color = color
+	s.Thickness = thickness
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = parent
 	return s
 end
-local function updateScale()
+
+-- ระบบสปริง Hover 1.06x (Back, 0.2s) & Click/Punch 0.9x (0.08s -> 1.0x)
+local function bindTactileSpring(btn: GuiButton, onClick: (() -> ())?)
+	local scale = btn:FindFirstChildOfClass("UIScale")
+	if not scale then
+		scale = Instance.new("UIScale")
+		scale.Parent = btn
+	end
+
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1.06,
+		}):Play()
+	end)
+
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(scale, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Scale = 1.0,
+		}):Play()
+	end)
+
+	btn.MouseButton1Down:Connect(function()
+		TweenService:Create(scale, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Scale = 0.9,
+		}):Play()
+	end)
+
+	btn.MouseButton1Up:Connect(function()
+		TweenService:Create(scale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1.0,
+		}):Play()
+	end)
+
+	if onClick then
+		btn.Activated:Connect(function()
+			clickSFX()
+			TweenService:Create(scale, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Scale = 0.9,
+			}):Play()
+			task.delay(0.08, function()
+				if scale and scale.Parent then
+					TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+						Scale = 1.0,
+					}):Play()
+				end
+			end)
+			onClick()
+		end)
+	end
+end
+
+-- สร้างปุ่มสไตล์เกมตู้ Arcade มีเงา Comic ทึบด้านหลัง
+local function createArcadeButton(parent: Instance, text: string, bgColor: Color3, textColor: Color3, size: UDim2, pos: UDim2?): TextButton
+	local btn = Instance.new("TextButton")
+	btn.Size = size
+	if pos then btn.Position = pos end
+	btn.BackgroundColor3 = bgColor
+	btn.AutoButtonColor = false
+	btn.Text = ""
+	btn.Parent = parent
+	addCorner(btn, 16)
+	addStroke(btn, Palette.InkDeep, 3)
+
+	-- แถบไฮไลท์ด้านบนสไตล์ปุ่ม Arcade นูน
+	local shine = Instance.new("Frame")
+	shine.Size = UDim2.new(1, -12, 0.38, 0)
+	shine.Position = UDim2.fromOffset(6, 4)
+	shine.BackgroundColor3 = Palette.White
+	shine.BackgroundTransparency = 0.82
+	shine.BorderSizePixel = 0
+	shine.ZIndex = btn.ZIndex + 1
+	shine.Parent = btn
+	addCorner(shine, 10)
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Name = "Label"
+	lbl.Size = UDim2.fromScale(1, 1)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.FredokaOne
+	lbl.Text = text
+	lbl.TextColor3 = textColor
+	lbl.TextSize = 20
+	lbl.ZIndex = btn.ZIndex + 2
+	lbl.Parent = btn
+	addStroke(lbl, Palette.InkDeep, 2.2)
+
+	return btn
+end
+
+---------------------------------------------------------------------
+-- 🖥️ สร้าง ScreenGui หลัก + UIScale Responsive (PC & Mobile)
+---------------------------------------------------------------------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GlueLobbyHUD"
+screenGui.IgnoreGuiInset = true
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 5
+screenGui.Parent = playerGui
+
+local rootScale = Instance.new("UIScale")
+rootScale.Parent = screenGui
+
+local function updateResponsiveScale()
 	local cam = workspace.CurrentCamera
 	if not cam then return end
 	local vp = cam.ViewportSize
-	local k = math.clamp(math.min(vp.X / 1280, vp.Y / 720), 0.65, 1.25)
-	for _, s in ipairs(scales) do s.Scale = k end
+	local s = math.min(vp.X / 1366, vp.Y / 768)
+	rootScale.Scale = math.clamp(s, 0.68, 1.15)
+end
+if workspace.CurrentCamera then
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)
+	updateResponsiveScale()
+end
+
+-- State ข้อมูลผู้เล่นฝั่ง Client
+local clientState = {
+	gold = tonumber(player:GetAttribute("Gold")) or 300,
+	wins = tonumber(player:GetAttribute("GlueWins")) or 0,
+	losses = tonumber(player:GetAttribute("GlueLosses")) or 0,
+	streak = tonumber(player:GetAttribute("GlueStreak")) or 0,
+	packsOpened = tonumber(player:GetAttribute("GluePacksOpened")) or 0,
+	collection = {} :: { [string]: number },
+	allCards = {} :: { any },
+	questsClaimed = {} :: { [string]: boolean },
+	inQueue = false,
+}
+
+-- ประกาศฟังก์ชันเปิดโมดอลล่วงหน้า
+local openModal: (modalName: string) -> ()
+
+---------------------------------------------------------------------
+-- 1️⃣ Top-Left: ป้ายโปรไฟล์ & ป้ายเหรียญ Gold
+---------------------------------------------------------------------
+local topLeftContainer = Instance.new("Frame")
+topLeftContainer.Name = "TopLeftHUD"
+topLeftContainer.Size = UDim2.fromOffset(540, 96)
+topLeftContainer.Position = UDim2.fromOffset(22, 20)
+topLeftContainer.BackgroundTransparency = 1
+topLeftContainer.Parent = screenGui
+
+-- เงาทึบหลังป้ายโปรไฟล์ (Comic Shadow)
+local profileShadow = Instance.new("Frame")
+profileShadow.Size = UDim2.fromOffset(310, 86)
+profileShadow.Position = UDim2.fromOffset(5, 6)
+profileShadow.BackgroundColor3 = Palette.InkDeep
+profileShadow.Parent = topLeftContainer
+addCorner(profileShadow, 18)
+
+-- กรอบโปรไฟล์หลัก
+local profileCard = Instance.new("Frame")
+profileCard.Name = "ProfileCard"
+profileCard.Size = UDim2.fromOffset(310, 86)
+profileCard.BackgroundColor3 = Palette.InkPanel
+profileCard.Parent = topLeftContainer
+addCorner(profileCard, 18)
+addStroke(profileCard, Palette.InkDeep, 3.2)
+
+-- วงกลมอวาตาร์ขอบรุ้งหมุนได้
+local avatarRing = Instance.new("Frame")
+avatarRing.Size = UDim2.fromOffset(68, 68)
+avatarRing.Position = UDim2.fromOffset(10, 9)
+avatarRing.BackgroundColor3 = Palette.InkDeep
+avatarRing.Parent = profileCard
+addCorner(avatarRing, 34)
+
+local avatarStroke = addStroke(avatarRing, Palette.White, 3.5)
+local rainbowGrad = Instance.new("UIGradient")
+rainbowGrad.Color = RAINBOW_SEQ
+rainbowGrad.Parent = avatarStroke
+
+local avatarImg = Instance.new("ImageLabel")
+avatarImg.Size = UDim2.fromScale(1, 1)
+avatarImg.BackgroundTransparency = 1
+avatarImg.Parent = avatarRing
+addCorner(avatarImg, 34)
+
+task.spawn(function()
+	local ok, url = pcall(function()
+		return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+	end)
+	if ok and url then
+		avatarImg.Image = url
+	end
+end)
+
+-- ป้ายเลเวลสีทอง (Sticker Badge เอียง -4 องศา)
+local levelBadge = Instance.new("Frame")
+levelBadge.Size = UDim2.fromOffset(58, 22)
+levelBadge.Position = UDim2.fromOffset(15, 60)
+levelBadge.Rotation = -4
+levelBadge.BackgroundColor3 = Palette.Gold
+levelBadge.ZIndex = 4
+levelBadge.Parent = profileCard
+addCorner(levelBadge, 8)
+addStroke(levelBadge, Palette.InkDeep, 2.5)
+
+local levelLabel = Instance.new("TextLabel")
+levelLabel.Size = UDim2.fromScale(1, 1)
+levelLabel.BackgroundTransparency = 1
+levelLabel.Font = Enum.Font.FredokaOne
+levelLabel.Text = "LV.1"
+levelLabel.TextColor3 = Palette.InkDeep
+levelLabel.TextSize = 14
+levelLabel.ZIndex = 5
+levelLabel.Parent = levelBadge
+
+-- ชื่อ DisplayName
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Size = UDim2.fromOffset(210, 26)
+nameLabel.Position = UDim2.fromOffset(88, 10)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Font = Enum.Font.FredokaOne
+nameLabel.Text = player.DisplayName
+nameLabel.TextColor3 = Palette.White
+nameLabel.TextSize = 20
+nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+nameLabel.Parent = profileCard
+addStroke(nameLabel, Palette.InkDeep, 2)
+
+-- สถิติชนะ/สตรีคย่อ
+local statSubLabel = Instance.new("TextLabel")
+statSubLabel.Size = UDim2.fromOffset(210, 18)
+statSubLabel.Position = UDim2.fromOffset(88, 34)
+statSubLabel.BackgroundTransparency = 1
+statSubLabel.Font = Enum.Font.GothamBold
+statSubLabel.Text = "🏆 ชนะ 0  •  🔥 สตรีค 0"
+statSubLabel.TextColor3 = Palette.Slime
+statSubLabel.TextSize = 13
+statSubLabel.TextXAlignment = Enum.TextXAlignment.Left
+statSubLabel.Parent = profileCard
+
+-- แถบหลอด XP สีชมพูกาว
+local xpBarBg = Instance.new("Frame")
+xpBarBg.Size = UDim2.fromOffset(204, 16)
+xpBarBg.Position = UDim2.fromOffset(88, 58)
+xpBarBg.BackgroundColor3 = Palette.InkDeep
+xpBarBg.Parent = profileCard
+addCorner(xpBarBg, 8)
+addStroke(xpBarBg, Palette.InkLight, 2)
+
+local xpBarFill = Instance.new("Frame")
+xpBarFill.Size = UDim2.new(0.35, 0, 1, 0)
+xpBarFill.BackgroundColor3 = Palette.Magenta
+xpBarFill.BorderSizePixel = 0
+xpBarFill.Parent = xpBarBg
+addCorner(xpBarFill, 8)
+
+local xpText = Instance.new("TextLabel")
+xpText.Size = UDim2.fromScale(1, 1)
+xpText.BackgroundTransparency = 1
+xpText.Font = Enum.Font.GothamBold
+xpText.Text = "XP 35 / 100"
+xpText.TextColor3 = Palette.White
+xpText.TextSize = 11
+xpText.ZIndex = 3
+xpText.Parent = xpBarBg
+addStroke(xpText, Palette.InkDeep, 1.5)
+
+-- ป้ายเหรียญ Gold (ติดข้างโปรไฟล์ กดแล้วเปิดร้านค้าทันที + แอนิเมชันเด้งเมื่อได้เงิน)
+local goldShadow = Instance.new("Frame")
+goldShadow.Size = UDim2.fromOffset(205, 86)
+goldShadow.Position = UDim2.fromOffset(329, 6)
+goldShadow.BackgroundColor3 = Palette.InkDeep
+goldShadow.Parent = topLeftContainer
+addCorner(goldShadow, 18)
+
+local goldBtn = Instance.new("TextButton")
+goldBtn.Name = "GoldBadgeBtn"
+goldBtn.Size = UDim2.fromOffset(205, 86)
+goldBtn.Position = UDim2.fromOffset(324, 0)
+goldBtn.BackgroundColor3 = Palette.InkPanel
+goldBtn.AutoButtonColor = false
+goldBtn.Text = ""
+goldBtn.Parent = topLeftContainer
+addCorner(goldBtn, 18)
+addStroke(goldBtn, Palette.Gold, 3)
+
+local goldAmountLabel = Instance.new("TextLabel")
+goldAmountLabel.Size = UDim2.new(1, -20, 0, 38)
+goldAmountLabel.Position = UDim2.fromOffset(12, 10)
+goldAmountLabel.BackgroundTransparency = 1
+goldAmountLabel.Font = Enum.Font.FredokaOne
+goldAmountLabel.Text = "🪙 300 Gold"
+goldAmountLabel.TextColor3 = Palette.Gold
+goldAmountLabel.TextSize = 23
+goldAmountLabel.TextXAlignment = Enum.TextXAlignment.Left
+goldAmountLabel.Parent = goldBtn
+addStroke(goldAmountLabel, Palette.InkDeep, 2.5)
+
+local goldHintPill = Instance.new("Frame")
+goldHintPill.Size = UDim2.new(1, -24, 0, 26)
+goldHintPill.Position = UDim2.fromOffset(12, 50)
+goldHintPill.BackgroundColor3 = Palette.Magenta
+goldHintPill.Parent = goldBtn
+addCorner(goldHintPill, 10)
+addStroke(goldHintPill, Palette.InkDeep, 2)
+
+local goldHintLabel = Instance.new("TextLabel")
+goldHintLabel.Size = UDim2.fromScale(1, 1)
+goldHintLabel.BackgroundTransparency = 1
+goldHintLabel.Font = Enum.Font.GothamBold
+goldHintLabel.Text = "🛒 แตะเพื่อเปิดร้านค้า"
+goldHintLabel.TextColor3 = Palette.White
+goldHintLabel.TextSize = 13
+goldHintLabel.Parent = goldHintPill
+addStroke(goldHintLabel, Palette.InkDeep, 1.5)
+
+bindTactileSpring(goldBtn, function()
+	openModal("Shop")
+end)
+
+local function bounceGoldBadge()
+	local sc = goldBtn:FindFirstChildOfClass("UIScale")
+	if not sc then
+		sc = Instance.new("UIScale")
+		sc.Parent = goldBtn
+	end
+	sc.Scale = 1.22
+	TweenService:Create(sc, TweenInfo.new(0.35, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {
+		Scale = 1.0,
+	}):Play()
 end
 
 ---------------------------------------------------------------------
--- 🍞 Toast แจ้งเตือน
+-- 2️⃣ Bottom-Center: ด็อกปุ่มต่อสู้คู่ (Battle Dock)
 ---------------------------------------------------------------------
-local toastHolder = make("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10), Size = UDim2.fromOffset(460, 54), BackgroundTransparency = 1, ZIndex = 50, Parent = gui })
-autoScale(toastHolder)
-local toastToken = 0
-local function toast(text, color)
-	toastToken += 1
-	local my = toastToken
-	for _, c in ipairs(toastHolder:GetChildren()) do
-		if c:IsA("Frame") then c:Destroy() end
-	end
-	local f = make("Frame", { Position = UDim2.fromOffset(0, -90), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.panel, ZIndex = 50, Parent = toastHolder })
-	corner(f, UDim.new(0.5, 0))
-	stroke(f, color or C.glue, 2.5)
-	label({ Text = text, Position = UDim2.fromScale(0.05, 0.2), Size = UDim2.fromScale(0.9, 0.6), ZIndex = 51, Parent = f })
-	tween(f, 0.35, { Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back)
-	task.delay(2.5, function()
-		if my ~= toastToken or not f.Parent then return end
-		tween(f, 0.25, { Position = UDim2.fromOffset(0, -90) }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-		Debris:AddItem(f, 0.3)
+local battleDock = Instance.new("Frame")
+battleDock.Name = "BattleDock"
+battleDock.Size = UDim2.fromOffset(500, 88)
+battleDock.AnchorPoint = Vector2.new(0.5, 1)
+battleDock.Position = UDim2.new(0.5, 0, 1, -22)
+battleDock.BackgroundColor3 = Palette.InkPanel
+battleDock.Parent = screenGui
+addCorner(battleDock, 20)
+addStroke(battleDock, Palette.InkDeep, 3.5)
+
+-- ป้ายสติกเกอร์คาดบน Battle Dock
+local dockRibbon = Instance.new("Frame")
+dockRibbon.Size = UDim2.fromOffset(170, 24)
+dockRibbon.AnchorPoint = Vector2.new(0.5, 0.5)
+dockRibbon.Position = UDim2.new(0.5, 0, 0, 0)
+dockRibbon.Rotation = -2
+dockRibbon.BackgroundColor3 = Palette.Gold
+dockRibbon.ZIndex = 5
+dockRibbon.Parent = battleDock
+addCorner(dockRibbon, 8)
+addStroke(dockRibbon, Palette.InkDeep, 2.5)
+
+local dockRibbonText = Instance.new("TextLabel")
+dockRibbonText.Size = UDim2.fromScale(1, 1)
+dockRibbonText.BackgroundTransparency = 1
+dockRibbonText.Font = Enum.Font.FredokaOne
+dockRibbonText.Text = "🕹️ CHAOS ARCADE DOCK"
+dockRibbonText.TextColor3 = Palette.InkDeep
+dockRibbonText.TextSize = 13
+dockRibbonText.ZIndex = 6
+dockRibbonText.Parent = dockRibbon
+
+-- ปุ่ม 1: ⚡ ดวลด่วน! (ปุ่มแคปซูลไฟวิ่งสลับสี 1-Click)
+local quickDuelBtn = createArcadeButton(
+	battleDock,
+	"⚡ ดวลด่วน!",
+	Palette.Slime,
+	Palette.White,
+	UDim2.fromOffset(230, 62),
+	UDim2.fromOffset(14, 14)
+)
+local quickGrad = Instance.new("UIGradient")
+quickGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Palette.Slime),
+	ColorSequenceKeypoint.new(0.5, Palette.Cyan),
+	ColorSequenceKeypoint.new(1, Palette.Slime),
+})
+quickGrad.Parent = quickDuelBtn
+
+bindTactileSpring(quickDuelBtn, function()
+	QuickPlay:FireServer({ difficulty = "Medium", mode = "Bot" })
+end)
+
+-- ปุ่ม 2: ⚔️ เลือกโหมด (เปิดหน้าต่างเลือกความยากบอท 5 ระดับ + PvP 1v1 + Custom Mode)
+local selectModeBtn = createArcadeButton(
+	battleDock,
+	"⚔️ เลือกโหมด",
+	Palette.Magenta,
+	Palette.White,
+	UDim2.fromOffset(230, 62),
+	UDim2.fromOffset(256, 14)
+)
+bindTactileSpring(selectModeBtn, function()
+	openModal("Play")
+end)
+
+---------------------------------------------------------------------
+-- 3️⃣ Right-Center: แถบเมนูลัดแนวตั้ง (Vertical Quick Bar 4 ปุ่ม)
+---------------------------------------------------------------------
+local quickBar = Instance.new("Frame")
+quickBar.Name = "VerticalQuickBar"
+quickBar.Size = UDim2.fromOffset(104, 348)
+quickBar.AnchorPoint = Vector2.new(1, 0.5)
+quickBar.Position = UDim2.new(1, -20, 0.5, 0)
+quickBar.BackgroundColor3 = Palette.InkPanel
+quickBar.Parent = screenGui
+addCorner(quickBar, 20)
+addStroke(quickBar, Palette.InkDeep, 3.5)
+
+local quickList = Instance.new("UIListLayout")
+quickList.Padding = UDim.new(0, 10)
+quickList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+quickList.VerticalAlignment = Enum.VerticalAlignment.Center
+quickList.Parent = quickBar
+
+local quickItems = {
+	{ id = "Album", icon = "🗃️", title = "คลังการ์ด", color = Palette.Cyan },
+	{ id = "Shop", icon = "🛒", title = "ร้านค้า", color = Palette.Gold },
+	{ id = "Quests", icon = "📜", title = "เควสต์", color = Palette.Slime },
+	{ id = "Settings", icon = "⚙️", title = "ตั้งค่า", color = Palette.Magenta },
+}
+
+for _, item in ipairs(quickItems) do
+	local qBtn = Instance.new("TextButton")
+	qBtn.Name = item.id .. "Btn"
+	qBtn.Size = UDim2.fromOffset(84, 72)
+	qBtn.BackgroundColor3 = Palette.InkLight
+	qBtn.AutoButtonColor = false
+	qBtn.Text = ""
+	qBtn.Parent = quickBar
+	addCorner(qBtn, 16)
+	addStroke(qBtn, item.color, 2.8)
+
+	local ico = Instance.new("TextLabel")
+	ico.Size = UDim2.new(1, 0, 0, 38)
+	ico.Position = UDim2.fromOffset(0, 6)
+	ico.BackgroundTransparency = 1
+	ico.Font = Enum.Font.FredokaOne
+	ico.Text = item.icon
+	ico.TextSize = 28
+	ico.Parent = qBtn
+
+	local cap = Instance.new("TextLabel")
+	cap.Size = UDim2.new(1, 0, 0, 22)
+	cap.Position = UDim2.fromOffset(0, 44)
+	cap.BackgroundTransparency = 1
+	cap.Font = Enum.Font.FredokaOne
+	cap.Text = item.title
+	cap.TextColor3 = Palette.White
+	cap.TextSize = 14
+	cap.Parent = qBtn
+	addStroke(cap, Palette.InkDeep, 1.8)
+
+	bindTactileSpring(qBtn, function()
+		openModal(item.id)
 	end)
 end
 
 ---------------------------------------------------------------------
--- 🧑 1) โปรไฟล์ (ซ้ายบน) + เชื่อมต่อ ProfilePanel
+-- 🪟 ระบบจัดการหน้าต่างโมดอลพิเศษ (Modals Container)
 ---------------------------------------------------------------------
-local profile = make("TextButton", {
-	Name = "Profile", Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(-420, 12),
-	Size = UDim2.fromOffset(320, 100), BackgroundColor3 = C.panel, BackgroundTransparency = 0.08, Parent = gui,
-})
-corner(profile, UDim.new(0, 20))
-stroke(profile, C.glue, 2.5, 0.2)
-make("UIGradient", { Color = ColorSequence.new(C.white, Color3.fromRGB(170, 160, 200)), Rotation = 90, Parent = profile })
-autoScale(profile)
+local modalBackdrop = Instance.new("Frame")
+modalBackdrop.Name = "ModalBackdrop"
+modalBackdrop.Size = UDim2.fromScale(1, 1)
+modalBackdrop.BackgroundColor3 = Palette.InkDeep
+modalBackdrop.BackgroundTransparency = 0.35
+modalBackdrop.Visible = false
+modalBackdrop.ZIndex = 20
+modalBackdrop.Parent = screenGui
 
-local avatar = make("ImageLabel", { Position = UDim2.fromOffset(12, 12), Size = UDim2.fromOffset(76, 76), BackgroundColor3 = Color3.fromRGB(70, 180, 255), Image = "", ZIndex = 2, Parent = profile })
-corner(avatar, UDim.new(1, 0))
-rainbowOn(stroke(avatar, C.white, 3.5), 200)
+local modals: { [string]: Frame } = {}
 
-local lvBadge = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(80, 80), Size = UDim2.fromOffset(36, 36), BackgroundColor3 = C.gold, ZIndex = 3, Parent = profile })
-corner(lvBadge, UDim.new(1, 0))
-stroke(lvBadge, C.white, 2)
-local lvText = label({ Text = "1", Font = Enum.Font.FredokaOne, TextColor3 = Color3.fromRGB(70, 35, 0), Position = UDim2.fromScale(0.15, 0.15), Size = UDim2.fromScale(0.7, 0.7), ZIndex = 4, Parent = lvBadge })
-
-local nameL = label({ Text = player.DisplayName, Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(102, 10), Size = UDim2.fromOffset(206, 28), Parent = profile })
-make("UIStroke", { Thickness = 1.5, Transparency = 0.3, Parent = nameL })
-
-local rankPill = make("Frame", { Position = UDim2.fromOffset(102, 42), Size = UDim2.fromOffset(206, 24), BackgroundColor3 = C.white, Parent = profile })
-corner(rankPill, UDim.new(0.5, 0))
-local rankGrad = make("UIGradient", { Rotation = 90, Parent = rankPill })
-local rankText = label({ Text = "", Position = UDim2.fromScale(0.05, 0.12), Size = UDim2.fromScale(0.9, 0.76), Parent = rankPill })
-make("UIStroke", { Thickness = 1.2, Parent = rankText })
-
-local xpBg = make("Frame", { Position = UDim2.fromOffset(102, 72), Size = UDim2.fromOffset(206, 18), BackgroundColor3 = C.dark, ClipsDescendants = true, Parent = profile })
-corner(xpBg, UDim.new(0.5, 0))
-local xpFill = make("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.white, Parent = xpBg })
-corner(xpFill, UDim.new(0.5, 0))
-make("UIGradient", { Color = ColorSequence.new(C.glue, Color3.fromRGB(140, 60, 255)), Parent = xpFill })
-local xpText = label({ Text = "", Font = Enum.Font.FredokaOne, Position = UDim2.fromScale(0, 0.1), Size = UDim2.fromScale(1, 0.8), ZIndex = 2, Parent = xpBg })
-make("UIStroke", { Thickness = 1.2, Parent = xpText })
-
-task.spawn(function()
-	local ok, img = pcall(Players.GetUserThumbnailAsync, Players, player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
-	if ok then avatar.Image = img end
-end)
-
-local function computeLevel()
-	local wins = player:GetAttribute("GlueWins") or 0
-	local matches = player:GetAttribute("GlueMatches") or 0
-	local xp = wins * 30 + matches * 10
-	local lv, need = 1, 50
-	while xp >= need do
-		xp -= need
-		lv += 1
-		need = 50 + lv * 25
+local function closeAllModals()
+	modalBackdrop.Visible = false
+	for _, m in pairs(modals) do
+		m.Visible = false
 	end
-	return lv, xp, need, wins
 end
 
-local function rankFor(wins)
-	local r = RANKS[1]
-	for _, x in ipairs(RANKS) do
-		if wins >= x.wins then r = x end
-	end
-	return r
-end
+local function createModalWindow(name: string, titleText: string, accentColor: Color3, width: number, height: number): Frame
+	local win = Instance.new("Frame")
+	win.Name = name .. "Modal"
+	win.Size = UDim2.fromOffset(width, height)
+	win.AnchorPoint = Vector2.new(0.5, 0.5)
+	win.Position = UDim2.fromScale(0.5, 0.5)
+	win.BackgroundColor3 = Palette.InkPanel
+	win.Visible = false
+	win.ZIndex = 22
+	win.Parent = modalBackdrop
+	addCorner(win, 20)
+	addStroke(win, accentColor, 3.5)
 
-local rankRainbow, lastLevel = false, nil
-local function refreshProfile()
-	local lv, xp, need, wins = computeLevel()
-	lvText.Text = tostring(lv)
-	tween(xpFill, 0.5, { Size = UDim2.fromScale(xp / need, 1) }, Enum.EasingStyle.Quart)
-	xpText.Text = string.format("XP %d/%d • ชนะ %d", xp, need, wins)
-	local r = rankFor(wins)
-	rankText.Text = r.name
-	rankRainbow = r.rainbow == true
-	rankGrad.Color = r.rainbow and RAINBOW or ColorSequence.new(r.color, r.color:Lerp(C.dark, 0.35))
-	if not rankRainbow then rankGrad.Rotation = 90 end
-	if lastLevel and lv > lastLevel then
-		toast("🎉 เลเวลอัป! Lv." .. lv .. " ความกาวเพิ่มขึ้น!", C.gold)
-		punch(lvBadge, 1.9)
-		sfx("rbxasset://sounds/electronicpingshort.wav", 1.3, 0.5)
-	end
-	lastLevel = lv
+	local winScale = Instance.new("UIScale")
+	winScale.Parent = win
+
+	-- แถบหัวข้อสไตล์มังงะเอียงเล็กน้อย
+	local header = Instance.new("Frame")
+	header.Size = UDim2.new(1, -28, 0, 54)
+	header.Position = UDim2.fromOffset(14, 12)
+	header.BackgroundColor3 = Palette.InkDeep
+	header.ZIndex = 23
+	header.Parent = win
+	addCorner(header, 14)
+	addStroke(header, accentColor, 2.5)
+
+	local hTitle = Instance.new("TextLabel")
+	hTitle.Size = UDim2.new(1, -70, 1, 0)
+	hTitle.Position = UDim2.fromOffset(18, 0)
+	hTitle.BackgroundTransparency = 1
+	hTitle.Font = Enum.Font.FredokaOne
+	hTitle.Text = titleText
+	hTitle.TextColor3 = Palette.White
+	hTitle.TextSize = 24
+	hTitle.TextXAlignment = Enum.TextXAlignment.Left
+	hTitle.ZIndex = 24
+	hTitle.Parent = header
+	addStroke(hTitle, Palette.InkDeep, 2)
+
+	local closeBtn = createArcadeButton(header, "✖", Palette.Crimson, Palette.White, UDim2.fromOffset(44, 40), UDim2.new(1, -50, 0, 7))
+	closeBtn.ZIndex = 25
+	bindTactileSpring(closeBtn, function()
+		closeAllModals()
+	end)
+
+	modals[name] = win
+	return win
 end
-player:GetAttributeChangedSignal("GlueWins"):Connect(refreshProfile)
-player:GetAttributeChangedSignal("GlueMatches"):Connect(refreshProfile)
-refreshProfile()
 
 ---------------------------------------------------------------------
--- 🪙 1.1) ป้ายแสดง Gold (ข้างโปรไฟล์)
+-- 🛒 โมดอล 1: ร้านค้าซองการ์ดกาว (Shop Gacha Modal)
 ---------------------------------------------------------------------
-local goldBadge = make("TextButton", {
-	Name = "GoldBadge", Text = "", AutoButtonColor = false,
-	Position = UDim2.fromOffset(-420, 14), Size = UDim2.fromOffset(190, 52),
-	BackgroundColor3 = C.panel, BackgroundTransparency = 0.08, Parent = gui,
-})
-corner(goldBadge, UDim.new(0, 18))
-rainbowOn(stroke(goldBadge, C.gold, 2.5), 180)
-make("UIGradient", { Color = ColorSequence.new(C.white, Color3.fromRGB(180, 160, 210)), Rotation = 90, Parent = goldBadge })
-autoScale(goldBadge)
+local shopModal = createModalWindow("Shop", "🛒 ร้านซองการ์ดกาว (Chaos Card Pack)", Palette.Gold, 760, 500)
 
-local coinIcon = label({ Text = "🪙", Font = Enum.Font.FredokaOne, Position = UDim2.fromOffset(10, 6), Size = UDim2.fromOffset(40, 40), Parent = goldBadge })
-local goldVal = label({ Text = "500 Gold", Font = Enum.Font.GothamBlack, TextColor3 = C.gold, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(56, 6), Size = UDim2.fromOffset(124, 24), Parent = goldBadge })
-make("UIStroke", { Thickness = 1.2, Parent = goldVal })
-local goldSub = label({ Text = "🛒 แตะเพื่อเปิดร้านค้า", Font = Enum.Font.GothamMedium, TextColor3 = C.sub, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(56, 30), Size = UDim2.fromOffset(124, 16), Parent = goldBadge })
+-- กรอบแสดงซองการ์ดตรงกลาง
+local packStage = Instance.new("Frame")
+packStage.Size = UDim2.new(1, -36, 0, 320)
+packStage.Position = UDim2.fromOffset(18, 78)
+packStage.BackgroundColor3 = Palette.InkDeep
+packStage.ZIndex = 23
+packStage.Parent = shopModal
+addCorner(packStage, 18)
+addStroke(packStage, Palette.InkLight, 2.5)
 
-local function refreshGold()
-	local g = player:GetAttribute("Gold") or 0
-	goldVal.Text = string.format("%d Gold", g)
-	punch(goldBadge, 1.15)
-end
-player:GetAttributeChangedSignal("Gold"):Connect(refreshGold)
-task.spawn(function()
-	task.wait(0.5)
-	refreshGold()
-end)
+-- ตัวซองการ์ดก่อนฉีก
+local packBox = Instance.new("Frame")
+packBox.Size = UDim2.fromOffset(190, 250)
+packBox.AnchorPoint = Vector2.new(0.5, 0.5)
+packBox.Position = UDim2.fromScale(0.5, 0.5)
+packBox.BackgroundColor3 = Palette.Magenta
+packBox.ZIndex = 25
+packBox.Parent = packStage
+addCorner(packBox, 18)
+addStroke(packBox, Palette.Gold, 3.5)
 
-goldBadge.MouseEnter:Connect(function()
-	tween(coinIcon, 0.25, { Rotation = 20 }, Enum.EasingStyle.Back)
-	hoverSfx()
-end)
-goldBadge.MouseLeave:Connect(function()
-	tween(coinIcon, 0.25, { Rotation = 0 }, Enum.EasingStyle.Back)
-end)
-goldBadge.Activated:Connect(function()
-	click()
-	punch(goldBadge, 1.25)
-	if type(_G.GlueMenu.shop) == "function" then
-		_G.GlueMenu.shop()
+local packGrad = Instance.new("UIGradient")
+packGrad.Color = RAINBOW_SEQ
+packGrad.Rotation = 45
+packGrad.Parent = packBox
+
+local packArt = Instance.new("TextLabel")
+packArt.Size = UDim2.fromScale(1, 0.65)
+packArt.BackgroundTransparency = 1
+packArt.Font = Enum.Font.FredokaOne
+packArt.Text = "🃏✨"
+packArt.TextSize = 68
+packArt.ZIndex = 26
+packArt.Parent = packBox
+
+local packTitle = Instance.new("TextLabel")
+packTitle.Size = UDim2.new(1, -12, 0, 54)
+packTitle.Position = UDim2.new(0, 6, 0.62, 0)
+packTitle.BackgroundTransparency = 1
+packTitle.Font = Enum.Font.FredokaOne
+packTitle.Text = "CHAOS PACK\nการันตีการ์ดกาว 3 ใบ!"
+packTitle.TextColor3 = Palette.White
+packTitle.TextSize = 18
+packTitle.ZIndex = 26
+packTitle.Parent = packBox
+addStroke(packTitle, Palette.InkDeep, 2.2)
+
+-- โซนแสดงการ์ด 3 ใบที่เปิดได้
+local revealedContainer = Instance.new("Frame")
+revealedContainer.Size = UDim2.fromScale(1, 1)
+revealedContainer.BackgroundTransparency = 1
+revealedContainer.Visible = false
+revealedContainer.ZIndex = 27
+revealedContainer.Parent = packStage
+
+local revLayout = Instance.new("UIListLayout")
+revLayout.FillDirection = Enum.FillDirection.Horizontal
+revLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+revLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+revLayout.Padding = UDim.new(0, 22)
+revLayout.Parent = revealedContainer
+
+local shopStatusLabel = Instance.new("TextLabel")
+shopStatusLabel.Size = UDim2.fromOffset(420, 34)
+shopStatusLabel.Position = UDim2.fromOffset(24, 418)
+shopStatusLabel.BackgroundTransparency = 1
+shopStatusLabel.Font = Enum.Font.GothamBold
+shopStatusLabel.Text = "⚪ Common 60%  |  🔵 Rare 28%  |  🟡 Legendary 9%  |  🟣 Glue 3%"
+shopStatusLabel.TextColor3 = Palette.Muted
+shopStatusLabel.TextSize = 14
+shopStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+shopStatusLabel.ZIndex = 24
+shopStatusLabel.Parent = shopModal
+
+local buyPackBtn = createArcadeButton(
+	shopModal,
+	"✨ เปิดซอง (100 Gold)",
+	Palette.Gold,
+	Palette.InkDeep,
+	UDim2.fromOffset(260, 62),
+	UDim2.new(1, -280, 1, -80)
+)
+buyPackBtn.ZIndex = 25
+
+local openingPack = false
+bindTactileSpring(buyPackBtn, function()
+	if openingPack then return end
+	openingPack = true
+
+	revealedContainer.Visible = false
+	for _, ch in ipairs(revealedContainer:GetChildren()) do
+		if ch:IsA("GuiObject") then ch:Destroy() end
 	end
+	packBox.Visible = true
+	packBox.Rotation = 0
+
+	local res = BuyPack:InvokeServer()
+	if not res or not res.ok then
+		shopStatusLabel.Text = "❌ " .. tostring(res and res.reason or "เปิดซองไม่สำเร็จ")
+		shopStatusLabel.TextColor3 = Palette.Crimson
+		openingPack = false
+		return
+	end
+
+	-- แอนิเมชันซองการ์ดสั่นและฉีกออกเป็นประกายไฟ
+	shopStatusLabel.Text = "💥 กำลังฉีกซองการ์ดกาว..."
+	shopStatusLabel.TextColor3 = Palette.Gold
+	local packScale = packBox:FindFirstChildOfClass("UIScale") or Instance.new("UIScale", packBox)
+	for i = 1, 8 do
+		packBox.Rotation = (i % 2 == 0) and 9 or -9
+		packScale.Scale = 1 + (i * 0.03)
+		playSFX("rbxassetid://9119713951", 0.9 + (i * 0.06), 0.35)
+		task.wait(0.055)
+	end
+	packBox.Rotation = 0
+	packScale.Scale = 1.0
+	packBox.Visible = false
+	revealedContainer.Visible = true
+
+	-- เผยการ์ด 3 ใบหมุนลอยขึ้นมาทีละใบตาม Rarity
+	for idx, card in ipairs(res.cards) do
+		local rInfo = RarityStyle[card.rarity] or RarityStyle.Common
+		local cardFrame = Instance.new("Frame")
+		cardFrame.Size = UDim2.fromOffset(200, 275)
+		cardFrame.BackgroundColor3 = Palette.InkPanel
+		cardFrame.Rotation = -18
+		cardFrame.ZIndex = 28
+		cardFrame.Parent = revealedContainer
+		addCorner(cardFrame, 16)
+		local cStroke = addStroke(cardFrame, rInfo.color, 3.5)
+
+		if card.rarity == "Glue" then
+			local rg = Instance.new("UIGradient")
+			rg.Color = RAINBOW_SEQ
+			rg.Parent = cStroke
+		end
+
+		local cScale = Instance.new("UIScale")
+		cScale.Scale = 0.1
+		cScale.Parent = cardFrame
+
+		-- ป้ายสติกเกอร์ Rarity เอียง
+		local rBadge = Instance.new("Frame")
+		rBadge.Size = UDim2.fromOffset(132, 24)
+		rBadge.Position = UDim2.fromOffset(34, -8)
+		rBadge.Rotation = 3
+		rBadge.BackgroundColor3 = rInfo.badgeBg
+		rBadge.ZIndex = 30
+		rBadge.Parent = cardFrame
+		addCorner(rBadge, 8)
+		addStroke(rBadge, rInfo.color, 2)
+
+		local rTxt = Instance.new("TextLabel")
+		rTxt.Size = UDim2.fromScale(1, 1)
+		rTxt.BackgroundTransparency = 1
+		rTxt.Font = Enum.Font.FredokaOne
+		rTxt.Text = rInfo.label
+		rTxt.TextColor3 = Palette.White
+		rTxt.TextSize = 13
+		rTxt.ZIndex = 31
+		rTxt.Parent = rBadge
+
+		local emo = Instance.new("TextLabel")
+		emo.Size = UDim2.new(1, 0, 0, 88)
+		emo.Position = UDim2.fromOffset(0, 26)
+		emo.BackgroundTransparency = 1
+		emo.Font = Enum.Font.FredokaOne
+		emo.Text = card.emoji
+		emo.TextSize = 62
+		emo.ZIndex = 29
+		emo.Parent = cardFrame
+
+		local cname = Instance.new("TextLabel")
+		cname.Size = UDim2.new(1, -16, 0, 28)
+		cname.Position = UDim2.fromOffset(8, 118)
+		cname.BackgroundTransparency = 1
+		cname.Font = Enum.Font.FredokaOne
+		cname.Text = card.name
+		cname.TextColor3 = Palette.White
+		cname.TextSize = 18
+		cname.ZIndex = 29
+		cname.Parent = cardFrame
+		addStroke(cname, Palette.InkDeep, 2)
+
+		local cdesc = Instance.new("TextLabel")
+		cdesc.Size = UDim2.new(1, -20, 0, 68)
+		cdesc.Position = UDim2.fromOffset(10, 148)
+		cdesc.BackgroundTransparency = 1
+		cdesc.Font = Enum.Font.GothamMedium
+		cdesc.Text = card.desc
+		cdesc.TextColor3 = Palette.Muted
+		cdesc.TextSize = 12
+		cdesc.TextWrapped = true
+		cdesc.ZIndex = 29
+		cdesc.Parent = cardFrame
+
+		local statLine = Instance.new("TextLabel")
+		statLine.Size = UDim2.new(1, -16, 0, 28)
+		statLine.Position = UDim2.fromOffset(8, 232)
+		statLine.BackgroundTransparency = 1
+		statLine.Font = Enum.Font.FredokaOne
+		statLine.Text = (card.cardType == "Monster")
+			and string.format("💧%d   ⚔ %d   ❤ %d", card.cost, card.atk, card.hp)
+			or string.format("💧%d   ✨ การ์ดเวทมนตร์", card.cost)
+		statLine.TextColor3 = Palette.Gold
+		statLine.TextSize = 15
+		statLine.ZIndex = 29
+		statLine.Parent = cardFrame
+		addStroke(statLine, Palette.InkDeep, 1.8)
+
+		playSFX("rbxassetid://6895079853", 1.0 + (idx * 0.15), 0.5)
+		TweenService:Create(cScale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1.0,
+		}):Play()
+		TweenService:Create(cardFrame, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Rotation = (idx == 2) and 0 or ((idx == 1) and -3 or 3),
+		}):Play()
+		task.wait(0.18)
+	end
+
+	shopStatusLabel.Text = "🎉 ได้รับการ์ดใหม่ 3 ใบเข้าคลังเรียบร้อย!"
+	shopStatusLabel.TextColor3 = Palette.Slime
+	openingPack = false
 end)
 
-local function openMyProfile(fromPoint)
-	if ProfilePanel and ProfilePanel.Open then
-		ProfilePanel.Open(player.UserId, { From = fromPoint })
+---------------------------------------------------------------------
+-- 🗃️ โมดอล 2: อัลบั้มคลังการ์ดกาวทั้ง 26 ใบ (Chaos Card Album)
+---------------------------------------------------------------------
+local albumModal = createModalWindow("Album", "🗃️ อัลบั้มคลังการ์ดกาว (26 ใบ)", Palette.Cyan, 880, 540)
+
+local albumScroll = Instance.new("ScrollingFrame")
+albumScroll.Size = UDim2.new(0.64, -24, 1, -92)
+albumScroll.Position = UDim2.fromOffset(16, 76)
+albumScroll.BackgroundColor3 = Palette.InkDeep
+albumScroll.ScrollBarThickness = 8
+albumScroll.ScrollBarImageColor3 = Palette.Cyan
+albumScroll.ZIndex = 23
+albumScroll.Parent = albumModal
+addCorner(albumScroll, 16)
+addStroke(albumScroll, Palette.InkLight, 2)
+
+local albumPad = Instance.new("UIPadding")
+albumPad.PaddingTop = UDim.new(0, 12)
+albumPad.PaddingBottom = UDim.new(0, 12)
+albumPad.PaddingLeft = UDim.new(0, 12)
+albumPad.PaddingRight = UDim.new(0, 12)
+albumPad.Parent = albumScroll
+
+local albumGrid = Instance.new("UIGridLayout")
+albumGrid.CellSize = UDim2.fromOffset(122, 156)
+albumGrid.CellPadding = UDim2.fromOffset(10, 10)
+albumGrid.SortOrder = Enum.SortOrder.LayoutOrder
+albumGrid.Parent = albumScroll
+
+-- แผงดูรายละเอียดการ์ดด้านขวา (Card Inspector)
+local inspectPanel = Instance.new("Frame")
+inspectPanel.Size = UDim2.new(0.36, -20, 1, -92)
+inspectPanel.Position = UDim2.new(0.64, 4, 0, 76)
+inspectPanel.BackgroundColor3 = Palette.InkDeep
+inspectPanel.ZIndex = 23
+inspectPanel.Parent = albumModal
+addCorner(inspectPanel, 16)
+addStroke(inspectPanel, Palette.Gold, 2.8)
+
+local inspectEmoji = Instance.new("TextLabel")
+inspectEmoji.Size = UDim2.new(1, 0, 0, 110)
+inspectEmoji.Position = UDim2.fromOffset(0, 18)
+inspectEmoji.BackgroundTransparency = 1
+inspectEmoji.Font = Enum.Font.FredokaOne
+inspectEmoji.Text = "🃏"
+inspectEmoji.TextSize = 76
+inspectEmoji.ZIndex = 24
+inspectEmoji.Parent = inspectPanel
+
+local inspectName = Instance.new("TextLabel")
+inspectName.Size = UDim2.new(1, -20, 0, 34)
+inspectName.Position = UDim2.fromOffset(10, 132)
+inspectName.BackgroundTransparency = 1
+inspectName.Font = Enum.Font.FredokaOne
+inspectName.Text = "แตะการ์ดเพื่อดูข้อมูล"
+inspectName.TextColor3 = Palette.Gold
+inspectName.TextSize = 22
+inspectName.ZIndex = 24
+inspectName.Parent = inspectPanel
+addStroke(inspectName, Palette.InkDeep, 2)
+
+local inspectStats = Instance.new("TextLabel")
+inspectStats.Size = UDim2.new(1, -20, 0, 32)
+inspectStats.Position = UDim2.fromOffset(10, 170)
+inspectStats.BackgroundTransparency = 1
+inspectStats.Font = Enum.Font.FredokaOne
+inspectStats.Text = "💧 -   ⚔ -   ❤ -"
+inspectStats.TextColor3 = Palette.Cyan
+inspectStats.TextSize = 18
+inspectStats.ZIndex = 24
+inspectStats.Parent = inspectPanel
+
+local inspectDesc = Instance.new("TextLabel")
+inspectDesc.Size = UDim2.new(1, -28, 0, 160)
+inspectDesc.Position = UDim2.fromOffset(14, 212)
+inspectDesc.BackgroundTransparency = 1
+inspectDesc.Font = Enum.Font.GothamMedium
+inspectDesc.Text = "สะสมการ์ดกาวให้ครบทั้ง 26 ใบจากการเปิดซองในร้านค้า!"
+inspectDesc.TextColor3 = Palette.White
+inspectDesc.TextSize = 15
+inspectDesc.TextWrapped = true
+inspectDesc.TextYAlignment = Enum.TextYAlignment.Top
+inspectDesc.ZIndex = 24
+inspectDesc.Parent = inspectPanel
+
+local function refreshAlbumGrid()
+	for _, ch in ipairs(albumScroll:GetChildren()) do
+		if ch:IsA("GuiButton") then ch:Destroy() end
+	end
+
+	local ownedTypes = 0
+	for idx, c in ipairs(clientState.allCards) do
+		local count = clientState.collection[c.id] or 0
+		local owned = count > 0
+		if owned then ownedTypes += 1 end
+		local rInfo = RarityStyle[c.rarity] or RarityStyle.Common
+
+		local cell = Instance.new("TextButton")
+		cell.LayoutOrder = idx
+		cell.BackgroundColor3 = owned and Palette.InkPanel or Color3.fromRGB(14, 12, 22)
+		cell.AutoButtonColor = false
+		cell.Text = ""
+		cell.ZIndex = 24
+		cell.Parent = albumScroll
+		addCorner(cell, 14)
+		addStroke(cell, owned and rInfo.color or Palette.InkLight, 2.5)
+
+		-- ป้ายจำนวน x1, x2 หรือ ❓
+		local cntBadge = Instance.new("Frame")
+		cntBadge.Size = UDim2.fromOffset(42, 22)
+		cntBadge.Position = UDim2.new(1, -46, 0, 6)
+		cntBadge.Rotation = 4
+		cntBadge.BackgroundColor3 = owned and Palette.Gold or Palette.InkLight
+		cntBadge.ZIndex = 26
+		cntBadge.Parent = cell
+		addCorner(cntBadge, 7)
+		addStroke(cntBadge, Palette.InkDeep, 2)
+
+		local cntText = Instance.new("TextLabel")
+		cntText.Size = UDim2.fromScale(1, 1)
+		cntText.BackgroundTransparency = 1
+		cntText.Font = Enum.Font.FredokaOne
+		cntText.Text = owned and ("x" .. tostring(count)) or "❓"
+		cntText.TextColor3 = owned and Palette.InkDeep or Palette.Muted
+		cntText.TextSize = 13
+		cntText.ZIndex = 27
+		cntText.Parent = cntBadge
+
+		local emo = Instance.new("TextLabel")
+		emo.Size = UDim2.new(1, 0, 0, 66)
+		emo.Position = UDim2.fromOffset(0, 24)
+		emo.BackgroundTransparency = 1
+		emo.Font = Enum.Font.FredokaOne
+		emo.Text = owned and c.emoji or "❓"
+		emo.TextColor3 = owned and Palette.White or Color3.fromRGB(45, 40, 65)
+		emo.TextSize = 44
+		emo.ZIndex = 25
+		emo.Parent = cell
+
+		local nm = Instance.new("TextLabel")
+		nm.Size = UDim2.new(1, -10, 0, 36)
+		nm.Position = UDim2.fromOffset(5, 94)
+		nm.BackgroundTransparency = 1
+		nm.Font = Enum.Font.FredokaOne
+		nm.Text = owned and c.name or "❓ ยังไม่มี"
+		nm.TextColor3 = owned and Palette.White or Palette.Muted
+		nm.TextSize = 14
+		nm.TextWrapped = true
+		nm.ZIndex = 25
+		nm.Parent = cell
+		addStroke(nm, Palette.InkDeep, 1.5)
+
+		bindTactileSpring(cell, function()
+			inspectEmoji.Text = owned and c.emoji or "❓"
+			inspectName.Text = string.format("%s (%s)", c.name, c.rarity)
+			inspectStats.Text = (c.cardType == "Monster")
+				and string.format("💧 มานา %d  |  ⚔ ATK %d  |  ❤ HP %d", c.cost, c.atk, c.hp)
+				or string.format("💧 มานา %d  |  ✨ การ์ดเวทมนตร์", c.cost)
+			inspectDesc.Text = c.desc .. (owned and string.format("\n\n📦 มีในคลัง: x%d ใบ", count) or "\n\n🔒 ยังไม่มีการ์ดใบนี้ เปิดซองในร้านค้าเพื่อสะสม!")
+		end)
+	end
+
+	albumScroll.CanvasSize = UDim2.fromOffset(0, math.ceil(#clientState.allCards / 4) * 168 + 24)
+end
+
+---------------------------------------------------------------------
+-- ⚔️ โมดอล 3: หน้าต่างเลือกโหมด (PlayPanel: Bot 5 ระดับ + PvP Queue + Custom PvP 0 Gold)
+---------------------------------------------------------------------
+local playModal = createModalWindow("Play", "⚔️ เลือกโหมดประลองการ์ดกาว", Palette.Magenta, 820, 520)
+
+-- ปุ่มสลับแท็บ: แท็บบอท vs แท็บ PvP
+local tabBotBtn = createArcadeButton(playModal, "🤖 ซ้อมบอท (5 ระดับ)", Palette.Cyan, Palette.White, UDim2.fromOffset(370, 48), UDim2.fromOffset(18, 76))
+tabBotBtn.ZIndex = 24
+local tabPvPBtn = createArcadeButton(playModal, "🌐 ดวลคนจริง PvP 1v1 & Custom", Palette.InkLight, Palette.White, UDim2.fromOffset(396, 48), UDim2.fromOffset(404, 76))
+tabPvPBtn.ZIndex = 24
+
+local botTabFrame = Instance.new("Frame")
+botTabFrame.Size = UDim2.new(1, -36, 1, -148)
+botTabFrame.Position = UDim2.fromOffset(18, 134)
+botTabFrame.BackgroundTransparency = 1
+botTabFrame.ZIndex = 24
+botTabFrame.Parent = playModal
+
+local pvpTabFrame = Instance.new("Frame")
+pvpTabFrame.Size = UDim2.new(1, -36, 1, -148)
+pvpTabFrame.Position = UDim2.fromOffset(18, 134)
+pvpTabFrame.BackgroundTransparency = 1
+pvpTabFrame.Visible = false
+pvpTabFrame.ZIndex = 24
+pvpTabFrame.Parent = playModal
+
+local botLayout = Instance.new("UIListLayout")
+botLayout.Padding = UDim.new(0, 10)
+botLayout.Parent = botTabFrame
+
+local botModes = {
+	{ id = "Easy", title = "🟢 Easy — หุ่นฝึกซ้อม", desc = "คิดช้า (1.3s) มีโอกาส 35% เล่นพลาด เหมาะสำหรับมือใหม่", reward = "+60 Gold", color = Palette.Slime },
+	{ id = "Medium", title = "🟡 Medium — บอทลุงกาว", desc = "บอทมาตรฐานสายกาว ตัดสินใจสมดุล", reward = "+100 Gold", color = Palette.Gold },
+	{ id = "Hard", title = "🟠 Hard — ลุงกาวหัวร้อน", desc = "ตัดสินใจไว (0.6s) เลือกการ์ดและเป้าที่ดีที่สุดเสมอ", reward = "+160 Gold", color = Color3.fromRGB(255, 140, 40) },
+	{ id = "Hacker", title = "🔴 Hacker — แฮกเกอร์สายกาว", desc = "คิดไวสุด (0.4s) แอบโกงมานา +1 ทุกเทิร์น ท้าทายขั้นสุด!", reward = "+250 Gold", color = Palette.Crimson },
+	{ id = "Mix", title = "🎲 Mix — สุ่มบอทลุ้นโชค", desc = "สุ่มเจอทุกระดับความยาก ชนะรับโบนัสพิเศษเพิ่มอีก +50G!", reward = "โบนัส +50G", color = Palette.Magenta },
+}
+
+for _, bm in ipairs(botModes) do
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 64)
+	row.BackgroundColor3 = Palette.InkDeep
+	row.ZIndex = 24
+	row.Parent = botTabFrame
+	addCorner(row, 14)
+	addStroke(row, bm.color, 2.5)
+
+	local tLbl = Instance.new("TextLabel")
+	tLbl.Size = UDim2.fromOffset(480, 28)
+	tLbl.Position = UDim2.fromOffset(16, 6)
+	tLbl.BackgroundTransparency = 1
+	tLbl.Font = Enum.Font.FredokaOne
+	tLbl.Text = bm.title
+	tLbl.TextColor3 = Palette.White
+	tLbl.TextSize = 19
+	tLbl.TextXAlignment = Enum.TextXAlignment.Left
+	tLbl.ZIndex = 25
+	tLbl.Parent = row
+
+	local dLbl = Instance.new("TextLabel")
+	dLbl.Size = UDim2.fromOffset(500, 22)
+	dLbl.Position = UDim2.fromOffset(16, 34)
+	dLbl.BackgroundTransparency = 1
+	dLbl.Font = Enum.Font.GothamMedium
+	dLbl.Text = bm.desc
+	dLbl.TextColor3 = Palette.Muted
+	dLbl.TextSize = 13
+	dLbl.TextXAlignment = Enum.TextXAlignment.Left
+	dLbl.ZIndex = 25
+	dLbl.Parent = row
+
+	local startBtn = createArcadeButton(row, "ลุยเลย! (" .. bm.reward .. ")", bm.color, Palette.InkDeep, UDim2.fromOffset(210, 46), UDim2.new(1, -222, 0, 9))
+	startBtn.ZIndex = 26
+	bindTactileSpring(startBtn, function()
+		closeAllModals()
+		QuickPlay:FireServer({ difficulty = bm.id, mode = "Bot" })
+	end)
+end
+
+-- แท็บ PvP: ฝั่งซ้าย = Ranked Queue 1v1 (+150G) | ฝั่งขวา = Custom Mode เลือกคนสู้เจาะจง (0 Gold)
+local rankedBox = Instance.new("Frame")
+rankedBox.Size = UDim2.new(0.46, -8, 1, 0)
+rankedBox.BackgroundColor3 = Palette.InkDeep
+rankedBox.ZIndex = 24
+rankedBox.Parent = pvpTabFrame
+addCorner(rankedBox, 16)
+addStroke(rankedBox, Palette.Gold, 2.8)
+
+local rankedTitle = Instance.new("TextLabel")
+rankedTitle.Size = UDim2.new(1, -24, 0, 36)
+rankedTitle.Position = UDim2.fromOffset(12, 16)
+rankedTitle.BackgroundTransparency = 1
+rankedTitle.Font = Enum.Font.FredokaOne
+rankedTitle.Text = "🏆 จับคู่ดวล 1v1 (Ranked)"
+rankedTitle.TextColor3 = Palette.Gold
+rankedTitle.TextSize = 22
+rankedTitle.ZIndex = 25
+rankedTitle.Parent = rankedBox
+
+local rankedDesc = Instance.new("TextLabel")
+rankedDesc.Size = UDim2.new(1, -28, 0, 90)
+rankedDesc.Position = UDim2.fromOffset(14, 58)
+rankedDesc.BackgroundTransparency = 1
+rankedDesc.Font = Enum.Font.GothamMedium
+rankedDesc.Text = "• สุ่มจับคู่ผู้เล่นในคิวแบบ Real-time\n• ชนะรับ +150 Gold 🪙\n• แพ้รับรางวัลปลอบใจ +40 Gold\n• ออกกลางคันปรับแพ้บายทันที!"
+rankedDesc.TextColor3 = Palette.White
+rankedDesc.TextSize = 14
+rankedDesc.TextXAlignment = Enum.TextXAlignment.Left
+rankedDesc.TextWrapped = true
+rankedDesc.ZIndex = 25
+rankedDesc.Parent = rankedBox
+
+local queueStatusLabel = Instance.new("TextLabel")
+queueStatusLabel.Size = UDim2.new(1, -24, 0, 32)
+queueStatusLabel.Position = UDim2.fromOffset(12, 190)
+queueStatusLabel.BackgroundTransparency = 1
+queueStatusLabel.Font = Enum.Font.FredokaOne
+queueStatusLabel.Text = "สถานะ: พร้อมค้นหาคู่ต่อสู้"
+queueStatusLabel.TextColor3 = Palette.Slime
+queueStatusLabel.TextSize = 17
+queueStatusLabel.ZIndex = 25
+queueStatusLabel.Parent = rankedBox
+
+local queueToggleBtn = createArcadeButton(rankedBox, "🔍 ค้นหาคู่ต่อสู้ 1v1", Palette.Slime, Palette.InkDeep, UDim2.new(1, -32, 0, 58), UDim2.new(0, 16, 1, -78))
+queueToggleBtn.ZIndex = 26
+
+bindTactileSpring(queueToggleBtn, function()
+	clientState.inQueue = not clientState.inQueue
+	local lbl = queueToggleBtn:FindFirstChild("Label") :: TextLabel?
+	if clientState.inQueue then
+		JoinPvPQueue:FireServer()
+		queueStatusLabel.Text = "⏳ กำลังรอคู่ต่อสู้ในคิว..."
+		queueStatusLabel.TextColor3 = Palette.Gold
+		queueToggleBtn.BackgroundColor3 = Palette.Crimson
+		if lbl then lbl.Text = "✖ ยกเลิกการค้นหา" end
 	else
-		toast(pick(QUIPS), Color3.fromRGB(70, 180, 255))
+		LeavePvPQueue:FireServer()
+		queueStatusLabel.Text = "สถานะ: พร้อมค้นหาคู่ต่อสู้"
+		queueStatusLabel.TextColor3 = Palette.Slime
+		queueToggleBtn.BackgroundColor3 = Palette.Slime
+		if lbl then lbl.Text = "🔍 ค้นหาคู่ต่อสู้ 1v1" end
 	end
-end
-
-profile.MouseEnter:Connect(function() tween(avatar, 0.3, { Rotation = 10 }, Enum.EasingStyle.Back); hoverSfx() end)
-profile.MouseLeave:Connect(function() tween(avatar, 0.3, { Rotation = 0 }, Enum.EasingStyle.Back) end)
-profile.Activated:Connect(function()
-	click(1.4)
-	punch(avatar, 0.7)
-	toast(pick(QUIPS), Color3.fromRGB(70, 180, 255))
-	task.delay(0.2, function()
-		openMyProfile(Vector2.new(160, 60))
-	end)
 end)
 
----------------------------------------------------------------------
--- 👁️ ระบบแตะผู้เล่นในฉาก 3D (PlayerTap) -> เปิด ProfilePanel
----------------------------------------------------------------------
-if PlayerTap and ProfilePanel then
-	task.spawn(function()
-		pcall(function()
-			PlayerTap.Init(function(userId, screenPoint)
-				ProfilePanel.Open(userId, { From = screenPoint })
+-- ฝั่งขวา: Custom Mode (เลือกคนท้าดวลเจาะจง - 0 Gold)
+local customBox = Instance.new("Frame")
+customBox.Size = UDim2.new(0.54, -8, 1, 0)
+customBox.Position = UDim2.new(0.46, 8, 0, 0)
+customBox.BackgroundColor3 = Palette.InkDeep
+customBox.ZIndex = 24
+customBox.Parent = pvpTabFrame
+addCorner(customBox, 16)
+addStroke(customBox, Palette.Cyan, 2.8)
+
+local customHeader = Instance.new("TextLabel")
+customHeader.Size = UDim2.new(1, -24, 0, 32)
+customHeader.Position = UDim2.fromOffset(12, 12)
+customHeader.BackgroundTransparency = 1
+customHeader.Font = Enum.Font.FredokaOne
+customHeader.Text = "🎯 โหมดเจาะจงเลือกคนสู้ (Custom 0 Gold)"
+customHeader.TextColor3 = Palette.Cyan
+customHeader.TextSize = 19
+customHeader.TextXAlignment = Enum.TextXAlignment.Left
+customHeader.ZIndex = 25
+customHeader.Parent = customBox
+
+local customSub = Instance.new("TextLabel")
+customSub.Size = UDim2.new(1, -24, 0, 22)
+customSub.Position = UDim2.fromOffset(12, 42)
+customSub.BackgroundTransparency = 1
+customSub.Font = Enum.Font.GothamMedium
+customSub.Text = "เลือกผู้เล่นในเซิร์ฟเวอร์เพื่อท้าดวลตัวต่อตัว (ไม่เสีย/ไม่ได้ Gold)"
+customSub.TextColor3 = Palette.Muted
+customSub.TextSize = 12
+customSub.TextXAlignment = Enum.TextXAlignment.Left
+customSub.ZIndex = 25
+customSub.Parent = customBox
+
+local customPlayerScroll = Instance.new("ScrollingFrame")
+customPlayerScroll.Size = UDim2.new(1, -24, 1, -80)
+customPlayerScroll.Position = UDim2.fromOffset(12, 68)
+customPlayerScroll.BackgroundColor3 = Palette.InkPanel
+customPlayerScroll.ScrollBarThickness = 6
+customPlayerScroll.ZIndex = 25
+customPlayerScroll.Parent = customBox
+addCorner(customPlayerScroll, 12)
+
+local customListLayout = Instance.new("UIListLayout")
+customListLayout.Padding = UDim.new(0, 8)
+customListLayout.Parent = customPlayerScroll
+
+local customPad = Instance.new("UIPadding")
+customPad.PaddingTop = UDim.new(0, 8)
+customPad.PaddingLeft = UDim.new(0, 8)
+customPad.PaddingRight = UDim.new(0, 8)
+customPad.Parent = customPlayerScroll
+
+local function refreshCustomPlayerList()
+	for _, ch in ipairs(customPlayerScroll:GetChildren()) do
+		if ch:IsA("Frame") then ch:Destroy() end
+	end
+
+	local count = 0
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player then
+			count += 1
+			local item = Instance.new("Frame")
+			item.Size = UDim2.new(1, 0, 0, 52)
+			item.BackgroundColor3 = Palette.InkDeep
+			item.ZIndex = 26
+			item.Parent = customPlayerScroll
+			addCorner(item, 10)
+			addStroke(item, Palette.InkLight, 2)
+
+			local pName = Instance.new("TextLabel")
+			pName.Size = UDim2.new(1, -150, 1, 0)
+			pName.Position = UDim2.fromOffset(12, 0)
+			pName.BackgroundTransparency = 1
+			pName.Font = Enum.Font.FredokaOne
+			pName.Text = "👤 " .. other.DisplayName
+			pName.TextColor3 = Palette.White
+			pName.TextSize = 16
+			pName.TextXAlignment = Enum.TextXAlignment.Left
+			pName.ZIndex = 27
+			pName.Parent = item
+
+			local busy = other:GetAttribute("GlueInDuel") == true
+			local chBtn = createArcadeButton(
+				item,
+				busy and "กำลังดวลอยู่" or "⚔️ ท้าดวล (0G)",
+				busy and Palette.InkLight or Palette.Cyan,
+				Palette.White,
+				UDim2.fromOffset(130, 38),
+				UDim2.new(1, -138, 0, 7)
+			)
+			chBtn.ZIndex = 27
+			bindTactileSpring(chBtn, function()
+				if other:GetAttribute("GlueInDuel") == true then return end
+				SendCustomChallenge:FireServer(other.UserId)
+				local lbl = chBtn:FindFirstChild("Label") :: TextLabel?
+				if lbl then lbl.Text = "✅ ส่งคำท้าแล้ว!" end
 			end)
+		end
+	end
+
+	if count == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Size = UDim2.new(1, 0, 0, 80)
+		empty.BackgroundTransparency = 1
+		empty.Font = Enum.Font.FredokaOne
+		empty.Text = "ยังไม่มีผู้เล่นอื่นในเซิร์ฟเวอร์\nชวนเพื่อนเข้ามาท้าดวล Custom ได้เลย!"
+		empty.TextColor3 = Palette.Muted
+		empty.TextSize = 15
+		empty.ZIndex = 26
+		empty.Parent = customPlayerScroll
+	end
+end
+
+bindTactileSpring(tabBotBtn, function()
+	botTabFrame.Visible = true
+	pvpTabFrame.Visible = false
+	tabBotBtn.BackgroundColor3 = Palette.Cyan
+	tabPvPBtn.BackgroundColor3 = Palette.InkLight
+end)
+
+bindTactileSpring(tabPvPBtn, function()
+	botTabFrame.Visible = false
+	pvpTabFrame.Visible = true
+	tabBotBtn.BackgroundColor3 = Palette.InkLight
+	tabPvPBtn.BackgroundColor3 = Palette.Magenta
+	refreshCustomPlayerList()
+end)
+
+---------------------------------------------------------------------
+-- 📜 โมดอล 4 & 5: เควสต์ (Quests) & ตั้งค่า (Settings)
+---------------------------------------------------------------------
+local questsModal = createModalWindow("Quests", "📜 ภารกิจสายกาวประจำวัน", Palette.Slime, 680, 440)
+local questsListFrame = Instance.new("Frame")
+questsListFrame.Size = UDim2.new(1, -36, 1, -92)
+questsListFrame.Position = UDim2.fromOffset(18, 76)
+questsListFrame.BackgroundTransparency = 1
+questsListFrame.ZIndex = 23
+questsListFrame.Parent = questsModal
+
+local qLayout = Instance.new("UIListLayout")
+qLayout.Padding = UDim.new(0, 12)
+qLayout.Parent = questsListFrame
+
+local questItemsUI = {
+	{ id = "first_win", title = "🥇 ชนะการดวลครั้งแรก", desc = "ชนะบอทหรือ PvP อย่างน้อย 1 แมตช์", reward = 150 },
+	{ id = "win_3", title = "🔥 จอมยุทธ์สายกาว", desc = "สะสมชัยชนะครบ 3 แมตช์", reward = 300 },
+	{ id = "open_pack", title = "✨ นักสุ่มกาชาหน้าใหม่", desc = "เปิดซองการ์ดกาวในร้านค้า 1 ครั้ง", reward = 120 },
+	{ id = "collector_10", title = "🗃️ นักสะสมการ์ดในตำนาน", desc = "สะสมการ์ดกาวไม่ซ้ำกันครบ 10 แบบ", reward = 250 },
+}
+
+local function refreshQuestsUI()
+	for _, ch in ipairs(questsListFrame:GetChildren()) do
+		if ch:IsA("Frame") then ch:Destroy() end
+	end
+	for _, q in ipairs(questItemsUI) do
+		local claimed = clientState.questsClaimed[q.id] == true
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, 74)
+		row.BackgroundColor3 = Palette.InkDeep
+		row.ZIndex = 24
+		row.Parent = questsListFrame
+		addCorner(row, 14)
+		addStroke(row, claimed and Palette.InkLight or Palette.Slime, 2.5)
+
+		local qt = Instance.new("TextLabel")
+		qt.Size = UDim2.fromOffset(420, 28)
+		qt.Position = UDim2.fromOffset(16, 10)
+		qt.BackgroundTransparency = 1
+		qt.Font = Enum.Font.FredokaOne
+		qt.Text = q.title
+		qt.TextColor3 = Palette.White
+		qt.TextSize = 19
+		qt.TextXAlignment = Enum.TextXAlignment.Left
+		qt.ZIndex = 25
+		qt.Parent = row
+
+		local qd = Instance.new("TextLabel")
+		qd.Size = UDim2.fromOffset(420, 22)
+		qd.Position = UDim2.fromOffset(16, 40)
+		qd.BackgroundTransparency = 1
+		qd.Font = Enum.Font.GothamMedium
+		qd.Text = q.desc
+		qd.TextColor3 = Palette.Muted
+		qd.TextSize = 13
+		qd.TextXAlignment = Enum.TextXAlignment.Left
+		qd.ZIndex = 25
+		qd.Parent = row
+
+		local cBtn = createArcadeButton(
+			row,
+			claimed and "✅ รับแล้ว" or ("🪙 รับ +" .. tostring(q.reward) .. "G"),
+			claimed and Palette.InkLight or Palette.Gold,
+			claimed and Palette.Muted or Palette.InkDeep,
+			UDim2.fromOffset(170, 48),
+			UDim2.new(1, -184, 0, 13)
+		)
+		cBtn.ZIndex = 26
+		bindTactileSpring(cBtn, function()
+			if claimed then return end
+			local res = ClaimQuest:InvokeServer(q.id)
+			if res and res.ok then
+				clientState.questsClaimed = res.questsClaimed or clientState.questsClaimed
+				refreshQuestsUI()
+			end
 		end)
+	end
+end
+
+local settingsModal = createModalWindow("Settings", "⚙️ ตั้งค่าระบบเกม", Palette.Magenta, 540, 360)
+local settingsList = Instance.new("Frame")
+settingsList.Size = UDim2.new(1, -36, 1, -92)
+settingsList.Position = UDim2.fromOffset(18, 76)
+settingsList.BackgroundTransparency = 1
+settingsList.ZIndex = 23
+settingsList.Parent = settingsModal
+
+local sLayout = Instance.new("UIListLayout")
+sLayout.Padding = UDim.new(0, 14)
+sLayout.Parent = settingsList
+
+local settingConfigs = {
+	{ attr = "GlueSFX", label = "🔊 เสียงเอฟเฟกต์ (SFX)", isNumber = true },
+	{ attr = "GlueBGM", label = "🎵 เสียงเพลงประกอบ (BGM)", isNumber = true },
+	{ attr = "GlueShake", label = "💥 เอฟเฟกต์จอสั่น (Screen Shake)", isNumber = false },
+}
+
+for _, sc in ipairs(settingConfigs) do
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 68)
+	row.BackgroundColor3 = Palette.InkDeep
+	row.ZIndex = 24
+	row.Parent = settingsList
+	addCorner(row, 14)
+	addStroke(row, Palette.InkLight, 2.5)
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.fromOffset(300, 68)
+	lbl.Position = UDim2.fromOffset(18, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.FredokaOne
+	lbl.Text = sc.label
+	lbl.TextColor3 = Palette.White
+	lbl.TextSize = 18
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.ZIndex = 25
+	lbl.Parent = row
+
+	local toggleBtn = createArcadeButton(row, "เปิด (ON)", Palette.Slime, Palette.InkDeep, UDim2.fromOffset(150, 46), UDim2.new(1, -166, 0, 11))
+	toggleBtn.ZIndex = 26
+
+	local function syncToggleVisual()
+		local val = player:GetAttribute(sc.attr)
+		local isOn = (sc.isNumber and (tonumber(val) or 1) > 0) or (not sc.isNumber and val == true)
+		toggleBtn.BackgroundColor3 = isOn and Palette.Slime or Palette.Crimson
+		local t = toggleBtn:FindFirstChild("Label") :: TextLabel?
+		if t then
+			t.Text = isOn and "✅ เปิด (ON)" or "❌ ปิด (OFF)"
+			t.TextColor3 = isOn and Palette.InkDeep or Palette.White
+		end
+	end
+	syncToggleVisual()
+
+	bindTactileSpring(toggleBtn, function()
+		local val = player:GetAttribute(sc.attr)
+		if sc.isNumber then
+			player:SetAttribute(sc.attr, ((tonumber(val) or 1) > 0) and 0 or 1)
+		else
+			player:SetAttribute(sc.attr, not (val == true))
+		end
+		syncToggleVisual()
 	end)
 end
 
 ---------------------------------------------------------------------
--- ⚔️ 3) ด็อกปุ่มดวล (กลางล่าง): ดวลด่วน + เลือกโหมด
+-- 🔔 แบนเนอร์รับคำท้าดวล Custom Mode แบบ Real-time
 ---------------------------------------------------------------------
-local battleDock = make("Frame", {
-	Name = "BattleDock", AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, 220), Size = UDim2.fromOffset(450, 86),
-	BackgroundTransparency = 1, Parent = gui,
-})
-autoScale(battleDock)
+local invitePopup = Instance.new("Frame")
+invitePopup.Size = UDim2.fromOffset(420, 150)
+invitePopup.AnchorPoint = Vector2.new(0.5, 0)
+invitePopup.Position = UDim2.new(0.5, 0, 0, -180)
+invitePopup.BackgroundColor3 = Palette.InkPanel
+invitePopup.Visible = false
+invitePopup.ZIndex = 40
+invitePopup.Parent = screenGui
+addCorner(invitePopup, 18)
+addStroke(invitePopup, Palette.Cyan, 3.5)
 
--- 3.1 ปุ่มดวลด่วน (QuickPlay)
-local quick = make("TextButton", {
-	Name = "QuickPlay", Text = "", AutoButtonColor = false,
-	Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(240, 86),
-	BackgroundTransparency = 1, Parent = battleDock,
-})
-local qInner = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, ClipsDescendants = true, Parent = quick })
-corner(qInner, UDim.new(0.5, 0))
-make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 130, 60), Color3.fromRGB(230, 40, 140)), Rotation = 90, Parent = qInner })
-rainbowOn(stroke(qInner, C.white, 4), 220)
-local qScale = make("UIScale", { Parent = qInner })
+local inviteTitle = Instance.new("TextLabel")
+inviteTitle.Size = UDim2.new(1, -24, 0, 64)
+inviteTitle.Position = UDim2.fromOffset(12, 12)
+inviteTitle.BackgroundTransparency = 1
+inviteTitle.Font = Enum.Font.FredokaOne
+inviteTitle.Text = "⚔️ มีผู้เล่นท้าดวล Custom Mode (0 Gold)!"
+inviteTitle.TextColor3 = Palette.Gold
+inviteTitle.TextSize = 18
+inviteTitle.TextWrapped = true
+inviteTitle.ZIndex = 41
+inviteTitle.Parent = invitePopup
 
-local shine = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, ZIndex = 1, Parent = qInner })
-corner(shine, UDim.new(0.5, 0))
-local shineGrad = make("UIGradient", {
-	Rotation = 20, Offset = Vector2.new(-1, 0),
-	Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.42, 1),
-		NumberSequenceKeypoint.new(0.5, 0.4), NumberSequenceKeypoint.new(0.58, 1), NumberSequenceKeypoint.new(1, 1),
-	}),
-	Parent = shine,
-})
-local qTitle = label({ Text = "⚡ ดวลด่วน!", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.08, 0.1), Size = UDim2.fromScale(0.84, 0.5), ZIndex = 2, Parent = qInner })
-make("UIStroke", { Thickness = 2, Parent = qTitle })
-label({ Text = "สู้บอททันที ไม่ต้องรอ", TextColor3 = Color3.fromRGB(255, 235, 200), Position = UDim2.fromScale(0.1, 0.62), Size = UDim2.fromScale(0.8, 0.26), ZIndex = 2, Parent = qInner })
+local acceptInviteBtn = createArcadeButton(invitePopup, "✅ รับคำท้า (0G)", Palette.Slime, Palette.InkDeep, UDim2.fromOffset(185, 48), UDim2.fromOffset(16, 86))
+acceptInviteBtn.ZIndex = 42
+local declineInviteBtn = createArcadeButton(invitePopup, "❌ ปฏิเสธ", Palette.Crimson, Palette.White, UDim2.fromOffset(185, 48), UDim2.fromOffset(218, 86))
+declineInviteBtn.ZIndex = 42
 
-local qTarget, qHover, quickCD = 1, false, 0
-quick.MouseEnter:Connect(function() qHover = true; qTarget = 1.06; hoverSfx() end)
-quick.MouseLeave:Connect(function() qHover = false; qTarget = 1 end)
-quick.MouseButton1Down:Connect(function() qTarget = 0.9 end)
-quick.MouseButton1Up:Connect(function() qTarget = qHover and 1.06 or 1 end)
-
-quick.Activated:Connect(function()
-	qTarget = qHover and 1.06 or 1
-	if os.clock() < quickCD then
-		toast("⏳ ใจเย็นๆ กำลังจัดโต๊ะอยู่", C.sub)
-		return
-	end
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum or hum.Health <= 0 then
-		toast("💀 ตัวละครยังไม่พร้อม", C.sub)
-		return
-	end
-	
-	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
-	local remote = folder and folder:FindFirstChild("QuickPlay")
-	if remote then
-		quickCD = os.clock() + 2
-		click(1.2)
-		qTitle.Text = "⏳ กำลังจัดโต๊ะ..."
-		remote:FireServer({ difficulty = "Medium", mode = "Quick" })
-		task.delay(2.5, function() qTitle.Text = "⚡ ดวลด่วน!" end)
-	else
-		toast("⚠️ ยังไม่พบ GlueCardRemotes", C.glue)
-	end
+bindTactileSpring(acceptInviteBtn, function()
+	invitePopup.Visible = false
+	RespondCustomChallenge:FireServer({ accepted = true })
 end)
 
--- 3.2 ปุ่มเลือกโหมด (PlayPanel)
-local modeBtn = make("TextButton", {
-	Name = "ModeSelect", Text = "", AutoButtonColor = false,
-	Position = UDim2.fromOffset(250, 0), Size = UDim2.fromOffset(200, 86),
-	BackgroundTransparency = 1, Parent = battleDock,
-})
-local mInner = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.white, ClipsDescendants = true, Parent = modeBtn })
-corner(mInner, UDim.new(0.5, 0))
-make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(60, 110, 255), Color3.fromRGB(150, 60, 240)), Rotation = 90, Parent = mInner })
-rainbowOn(stroke(mInner, C.white, 3.5), 180)
-local mScale = make("UIScale", { Parent = mInner })
+bindTactileSpring(declineInviteBtn, function()
+	invitePopup.Visible = false
+	RespondCustomChallenge:FireServer({ accepted = false })
+end)
 
-local mTitle = label({ Text = "⚔️ เลือกโหมด", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.08, 0.1), Size = UDim2.fromScale(0.84, 0.5), ZIndex = 2, Parent = mInner })
-make("UIStroke", { Thickness = 2, Parent = mTitle })
-label({ Text = "บอท 5 ระดับ • PvP 1v1", TextColor3 = Color3.fromRGB(225, 230, 255), Position = UDim2.fromScale(0.06, 0.62), Size = UDim2.fromScale(0.88, 0.26), ZIndex = 2, Parent = mInner })
-
-local mTarget, mHover = 1, false
-modeBtn.MouseEnter:Connect(function() mHover = true; mTarget = 1.06; hoverSfx() end)
-modeBtn.MouseLeave:Connect(function() mHover = false; mTarget = 1 end)
-modeBtn.MouseButton1Down:Connect(function() mTarget = 0.9 end)
-modeBtn.MouseButton1Up:Connect(function() mTarget = mHover and 1.06 or 1 end)
-
--- Adapter เชื่อมต่อ PlayPanel
-local Decks = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Decks"))
-local leaderIndex = 1
-local queueMode = nil
-
-local function leaderId()
-	local l = Decks.Leaders and Decks.Leaders[leaderIndex]
-	return l and l.Id or 1
-end
-
-local function leaderName()
-	local l = Decks.Leaders and Decks.Leaders[leaderIndex]
-	return l and l.Name or "หัวหน้า"
-end
-
-local function startMode(mode)
+IncomingCustomChallenge.OnClientEvent:Connect(function(data: any)
 	if player:GetAttribute("GlueInDuel") == true then return end
-	if MenuKit and MenuKit.close then MenuKit.close() end
-
-	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
-	if mode == "PvP" then
-		local joinRemote = folder and folder:FindFirstChild("JoinPvPQueue")
-		if joinRemote then
-			queueMode = "PvP"
-			toast("🔍 กำลังค้นหาคู่ต่อสู้ 1v1... (กดอีกครั้งเพื่อยกเลิก)", Color3.fromRGB(70, 180, 255))
-			joinRemote:FireServer()
-		else
-			toast("⚠️ ยังไม่พบ JoinPvPQueue Remote", C.glue)
-		end
-		return
-	end
-
-	local remote = folder and folder:FindFirstChild("QuickPlay")
-	if remote then
-		local diff = "Medium"
-		if mode == "BotEasy" then diff = "Easy"
-		elseif mode == "BotMedium" then diff = "Medium"
-		elseif mode == "BotHard" then diff = "Hard"
-		elseif mode == "BotHacker" then diff = "Hacker"
-		elseif mode == "BotMix" then diff = "Mix"
-		elseif mode == "Tower" then diff = "Tower"
-		end
-
-		toast("⚔️ กำลังเริ่มดวล (" .. tostring(mode) .. ")", C.gold)
-		remote:FireServer({ difficulty = diff, mode = mode })
-	else
-		toast("⚠️ ยังไม่พบ GlueCardRemotes", C.glue)
-	end
-end
-
-local function togglePvP()
-	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
-	if queueMode == "PvP" then
-		local leaveRemote = folder and folder:FindFirstChild("LeavePvPQueue")
-		if leaveRemote then leaveRemote:FireServer() end
-		queueMode = nil
-		toast("❌ ยกเลิกการหาคู่ต่อสู้แล้ว", C.sub)
-	else
-		startMode("PvP")
-	end
-end
-
-local playApi = {
-	StartMode = startMode,
-	TogglePvP = togglePvP,
-	IsQueuing = function() return queueMode == "PvP" end,
-	LeaderName = leaderName,
-	NextLeader = function()
-		local n = #(Decks.Leaders or {})
-		if n > 0 then leaderIndex = ((leaderIndex or 1) % n) + 1 end
-	end,
-	TowerFloor = function()
-		return player:GetAttribute("TowerFloor") or 1
-	end,
-}
-
-modeBtn.Activated:Connect(function()
-	click()
-	mTarget = mHover and 1.06 or 1
-	if PlayPanel and PlayPanel.Open then
-		PlayPanel.Open(playApi)
-	else
-		toast("🚧 หน้าต่างเลือกโหมดกำลังโหลด...", C.gold)
-	end
+	inviteTitle.Text = string.format("🎯 %s ท้าดวลคุณในโหมด Custom (0 Gold)!", tostring(data and data.challengerName or "ผู้เล่น"))
+	invitePopup.Position = UDim2.new(0.5, 0, 0, -160)
+	invitePopup.Visible = true
+	playSFX("rbxassetid://9119713951", 1.15, 0.5)
+	TweenService:Create(invitePopup, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Position = UDim2.new(0.5, 0, 0, 22),
+	}):Play()
 end)
 
 ---------------------------------------------------------------------
--- 📋 6) เมนูลัด (ขวากลาง)
+-- 🔄 ฟังก์ชันเปิดหน้าต่างโมดอล & ซิงก์ข้อมูลผู้เล่น
 ---------------------------------------------------------------------
-local menu = make("Frame", {
-	Name = "MenuBar", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 220, 0.5, 0),
-	Size = UDim2.fromOffset(96, #MENU * 86 + 14), BackgroundColor3 = C.panel, BackgroundTransparency = 0.15, Parent = gui,
-})
-corner(menu, UDim.new(0, 20))
-stroke(menu, Color3.fromRGB(60, 50, 100), 2, 0.2)
-autoScale(menu)
-make("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Parent = menu })
+openModal = function(modalName: string)
+	closeAllModals()
+	local target = modals[modalName]
+	if not target then return end
 
-_G.GlueMenu = _G.GlueMenu or {}
-local openSettings, closeSettings
-local questDot
-
--- เชื่อมต่อระบบให้กับ _G.GlueMenu
-_G.GlueMenu.play = function()
-	if PlayPanel and PlayPanel.Open then
-		PlayPanel.Open(playApi)
-	end
-end
-
-_G.GlueMenu.profile = function()
-	openMyProfile(Vector2.new(160, 60))
-end
-
----------------------------------------------------------------------
--- 🛒 6.1) ร้านค้าซื้อซองการ์ดกาว (Shop Gacha)
----------------------------------------------------------------------
-local shopDim, shopWin = nil, nil
-local function closeShopModal()
-	if shopDim and shopDim.Parent then shopDim:Destroy(); shopDim = nil end
-end
-
-local function openShopModal()
-	closeShopModal()
-	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
-	local BuyPackRemote = folder and folder:FindFirstChild("BuyPack")
-
-	shopDim = make("TextButton", {
-		Name = "ShopModal", Text = "", AutoButtonColor = false,
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 0.5, ZIndex = 60, Parent = gui,
-	})
-	local shopBox = make("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(560, 460), BackgroundColor3 = C.panel, ZIndex = 61, Parent = shopDim,
-	})
-	corner(shopBox, UDim.new(0, 24))
-	rainbowOn(stroke(shopBox, C.white, 3.5), 160)
-	autoScale(shopBox)
-
-	local sTitle = label({ Text = "🛒 ร้านซองการ์ดกาว (Pack Gacha)", Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(24, 16), Size = UDim2.fromOffset(400, 32), ZIndex = 62, Parent = shopBox })
-	make("UIStroke", { Thickness = 1.5, Parent = sTitle })
-
-	local sClose = make("TextButton", {
-		Text = "✕", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white,
-		AutoButtonColor = false, Position = UDim2.new(1, -48, 0, 16), Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = Color3.fromRGB(230, 60, 80), ZIndex = 62, Parent = shopBox,
-	})
-	corner(sClose, UDim.new(1, 0))
-	sClose.Activated:Connect(function() click(0.9); closeShopModal() end)
-
-	local sDesc = label({
-		Text = "เปิดซองการ์ดกาวสุดปั่น 100 Gold / ซอง • สุ่มได้การ์ด 3 ใบ สะสมเข้าคลัง!",
-		Font = Enum.Font.GothamMedium, TextColor3 = C.sub, TextXAlignment = Enum.TextXAlignment.Left,
-		Position = UDim2.fromOffset(24, 52), Size = UDim2.fromOffset(510, 24), ZIndex = 62, Parent = shopBox,
-	})
-
-	local displayArea = make("Frame", {
-		Position = UDim2.fromOffset(24, 88), Size = UDim2.fromOffset(512, 260),
-		BackgroundColor3 = C.dark, BackgroundTransparency = 0.4, ZIndex = 62, Parent = shopBox,
-	})
-	corner(displayArea, UDim.new(0, 16))
-	stroke(displayArea, Color3.fromRGB(70, 60, 110), 2)
-
-	local packVisual = label({ Text = "📦", Font = Enum.Font.FredokaOne, Position = UDim2.fromScale(0.3, 0.1), Size = UDim2.fromScale(0.4, 0.55), ZIndex = 63, Parent = displayArea })
-	local packHint = label({ Text = "กดปุ่มด้านล่างเพื่อเปิดซองการ์ด!", Font = Enum.Font.GothamBold, TextColor3 = C.gold, Position = UDim2.fromScale(0.1, 0.72), Size = UDim2.fromScale(0.8, 0.2), ZIndex = 63, Parent = displayArea })
-
-	local buyBtn = make("TextButton", {
-		Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 1, -84), Size = UDim2.fromOffset(360, 60),
-		BackgroundColor3 = C.white, ZIndex = 62, Parent = shopBox,
-	})
-	corner(buyBtn, UDim.new(0.5, 0))
-	make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 170, 40), Color3.fromRGB(240, 50, 140)), Rotation = 90, Parent = buyBtn })
-	rainbowOn(stroke(buyBtn, C.white, 3), 200)
-
-	local bLabel = label({ Text = "✨ เปิดซอง (100 Gold)", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.05, 0.15), Size = UDim2.fromScale(0.9, 0.7), ZIndex = 63, Parent = buyBtn })
-	make("UIStroke", { Thickness = 1.5, Parent = bLabel })
-
-	local busy = false
-	buyBtn.Activated:Connect(function()
-		if busy then return end
-		if not BuyPackRemote then
-			toast("⚠️ ไม่พบระบบซื้อซองการ์ด", C.glue)
-			return
-		end
-		local gold = player:GetAttribute("Gold") or 0
-		if gold < 100 then
-			toast("❌ เหรียญ Gold ไม่พอ (ต้องใช้ 100 Gold)", C.glue)
-			punch(buyBtn, 0.9)
-			return
-		end
-
-		busy = true
-		click(1.2)
-		bLabel.Text = "⏳ กำลังเปิดซอง..."
-		tween(packVisual, 0.3, { Rotation = 25 }, Enum.EasingStyle.Back)
-
-		local ok, res = pcall(function() return BuyPackRemote:InvokeServer() end)
-		busy = false
-		bLabel.Text = "✨ เปิดอีกซอง (100 Gold)"
-		tween(packVisual, 0.3, { Rotation = 0 })
-
-		if not ok or type(res) ~= "table" or not res.ok then
-			toast("❌ " .. tostring(res and res.reason or "เปิดซองไม่สำเร็จ"), C.glue)
-			return
-		end
-
-		-- โชว์การ์ดที่ได้ 3 ใบ
-		for _, child in ipairs(displayArea:GetChildren()) do
-			if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
-		end
-
-		toast("🎉 ยินดีด้วย! เปิดซองสำเร็จ ได้รับการ์ด 3 ใบ", C.gold)
-		sfx("rbxasset://sounds/electronicpingshort.wav", 1.2, 0.5)
-
-		local cardWidth = 150
-		for idx, card in ipairs(res.cards or {}) do
-			local xOffset = 18 + (idx - 1) * 168
-			local cFrame = make("Frame", {
-				Position = UDim2.fromOffset(xOffset, 16), Size = UDim2.fromOffset(cardWidth, 226),
-				BackgroundColor3 = C.panel, ZIndex = 64, Parent = displayArea,
-			})
-			corner(cFrame, UDim.new(0, 14))
-
-			local borderColor = card.rarity == "Glue" and C.glue
-				or card.rarity == "Legendary" and C.gold
-				or card.rarity == "Rare" and C.blue
-				or Color3.fromRGB(130, 135, 145)
-			stroke(cFrame, borderColor, 2.5)
-
-			local cEmoji = label({ Text = card.emoji or "🃏", Font = Enum.Font.FredokaOne, Position = UDim2.fromScale(0.1, 0.06), Size = UDim2.fromScale(0.8, 0.4), ZIndex = 65, Parent = cFrame })
-			local cName = label({ Text = card.name or "การ์ดกาว", Font = Enum.Font.GothamBold, Position = UDim2.fromScale(0.05, 0.48), Size = UDim2.fromScale(0.9, 0.18), ZIndex = 65, Parent = cFrame })
-			local cRarity = label({ Text = "[" .. tostring(card.rarity or "Common") .. "]", Font = Enum.Font.GothamMedium, TextColor3 = borderColor, Position = UDim2.fromScale(0.05, 0.68), Size = UDim2.fromScale(0.9, 0.14), ZIndex = 65, Parent = cFrame })
-			local cStat = label({
-				Text = card.kind == "Spell" and "✨ เวทมนตร์" or string.format("⚔%d ❤%d", card.atk or 0, card.hp or 0),
-				Font = Enum.Font.GothamBlack, TextColor3 = C.white, Position = UDim2.fromScale(0.05, 0.82), Size = UDim2.fromScale(0.9, 0.14), ZIndex = 65, Parent = cFrame,
-			})
-
-			punch(cFrame, 1.3)
-		end
-	end)
-end
-
----------------------------------------------------------------------
--- 🃏 6.2) อัลบั้มคลังการ์ดกาว (Chaos Card Album)
----------------------------------------------------------------------
-local albumDim = nil
-local function closeAlbumModal()
-	if albumDim and albumDim.Parent then albumDim:Destroy(); albumDim = nil end
-end
-
-local function openAlbumModal()
-	closeAlbumModal()
-	local folder = ReplicatedStorage:FindFirstChild("GlueCardRemotes")
-	local GetColRemote = folder and folder:FindFirstChild("GetCollection")
-
-	albumDim = make("TextButton", {
-		Name = "AlbumModal", Text = "", AutoButtonColor = false,
-		Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 0.5, ZIndex = 60, Parent = gui,
-	})
-	local aBox = make("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(640, 520), BackgroundColor3 = C.panel, ZIndex = 61, Parent = albumDim,
-	})
-	corner(aBox, UDim.new(0, 24))
-	rainbowOn(stroke(aBox, C.blue, 3.5), 140)
-	autoScale(aBox)
-
-	local aTitle = label({ Text = "🃏 อัลบั้มการ์ดกาว (Chaos Card Album)", Font = Enum.Font.GothamBlack, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(24, 16), Size = UDim2.fromOffset(450, 32), ZIndex = 62, Parent = aBox })
-	make("UIStroke", { Thickness = 1.5, Parent = aTitle })
-
-	local aClose = make("TextButton", {
-		Text = "✕", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white,
-		AutoButtonColor = false, Position = UDim2.new(1, -48, 0, 16), Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = Color3.fromRGB(230, 60, 80), ZIndex = 62, Parent = aBox,
-	})
-	corner(aClose, UDim.new(1, 0))
-	aClose.Activated:Connect(function() click(0.9); closeAlbumModal() end)
-
-	local scroll = make("ScrollingFrame", {
-		Position = UDim2.fromOffset(24, 60), Size = UDim2.fromOffset(592, 436),
-		BackgroundColor3 = C.dark, BackgroundTransparency = 0.4, BorderSizePixel = 0,
-		ScrollBarThickness = 6, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ZIndex = 62, Parent = aBox,
-	})
-	corner(scroll, UDim.new(0, 16))
-	stroke(scroll, Color3.fromRGB(60, 50, 95), 1.5)
-
-	local grid = make("UIGridLayout", {
-		CellSize = UDim2.fromOffset(132, 170), CellPadding = UDim2.fromOffset(12, 12),
-		SortOrder = Enum.SortOrder.LayoutOrder, Parent = scroll,
-	})
-	make("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12), Parent = scroll })
-
-	local ALL_CARDS = {
-		{ id = "chicken", name = "ไก่ย่างอมตะ", emoji = "🐔", rarity = "Common" },
-		{ id = "cat", name = "แมวส้มจอมป่วน", emoji = "🐈", rarity = "Common" },
-		{ id = "dog", name = "หมาวัดตัวตึง", emoji = "🐕", rarity = "Common" },
-		{ id = "frog", name = "กบร้องลูกทุ่ง", emoji = "🐸", rarity = "Common" },
-		{ id = "dino", name = "ไดโนแขนสั้น", emoji = "🦖", rarity = "Common" },
-		{ id = "banana", name = "เปลือกกล้วย", emoji = "🍌", rarity = "Common" },
-		{ id = "mookata", name = "หมูกระทะ", emoji = "🥓", rarity = "Common" },
-		{ id = "coffee", name = "กาแฟ 3 แก้ว", emoji = "☕", rarity = "Common" },
-		{ id = "gluetube", name = "กาวตราช้าง", emoji = "🧪", rarity = "Common" },
-		{ id = "uncle", name = "ลุงวินซิ่งนรก", emoji = "🛵", rarity = "Rare" },
-		{ id = "raccoon", name = "แรคคูนหมูปิ้ง", emoji = "🦝", rarity = "Rare" },
-		{ id = "monkey", name = "ลิงขโมยมือถือ", emoji = "🐒", rarity = "Rare" },
-		{ id = "durian", name = "ทุเรียนพลีชีพ", emoji = "🍈", rarity = "Rare" },
-		{ id = "ninja", name = "นินจาหนีหนี้", emoji = "🥷", rarity = "Rare" },
-		{ id = "zombie", name = "ซอมบี้เงินเดือน", emoji = "🧟", rarity = "Rare" },
-		{ id = "slipper", name = "รองเท้าแตะแม่", emoji = "👡", rarity = "Rare" },
-		{ id = "bomb", name = "ระเบิดปลาร้า", emoji = "💣", rarity = "Rare" },
-		{ id = "momcall", name = "เสียงแม่เรียก", emoji = "📢", rarity = "Rare" },
-		{ id = "lag", name = "เน็ตหลุด", emoji = "📶", rarity = "Rare" },
-		{ id = "grandma", name = "ยายรองเท้าแตะ", emoji = "👵", rarity = "Legendary" },
-		{ id = "wizard", name = "พ่อมดไลฟ์สด", emoji = "🧙", rarity = "Legendary" },
-		{ id = "buffalo", name = "ควายบึ้กช้าง", emoji = "🐃", rarity = "Legendary" },
-		{ id = "clown", name = "ตัวตลกหัวร้อน", emoji = "🤡", rarity = "Glue" },
-		{ id = "duck", name = "เป็ดยางพิฆาต", emoji = "🦆", rarity = "Glue" },
-		{ id = "dragon", name = "มังกรกาวพันปี", emoji = "🐉", rarity = "Glue" },
-		{ id = "dice", name = "ลูกเต๋ากาว", emoji = "🎲", rarity = "Glue" },
-	}
-
-	local ownedMap = {}
-	if GetColRemote then
-		local ok, res = pcall(function() return GetColRemote:InvokeServer() end)
-		if ok and type(res) == "table" and res.collection then
-			ownedMap = res.collection
-		end
-	end
-
-	for idx, c in ipairs(ALL_CARDS) do
-		local count = ownedMap[c.id] or 0
-		local cardF = make("Frame", {
-			Size = UDim2.fromOffset(132, 170),
-			BackgroundColor3 = count > 0 and C.panel or Color3.fromRGB(20, 18, 30),
-			ZIndex = 63, LayoutOrder = idx, Parent = scroll,
-		})
-		corner(cardF, UDim.new(0, 12))
-
-		local borderColor = count == 0 and Color3.fromRGB(60, 55, 75)
-			or c.rarity == "Glue" and C.glue
-			or c.rarity == "Legendary" and C.gold
-			or c.rarity == "Rare" and C.blue
-			or Color3.fromRGB(140, 145, 160)
-
-		stroke(cardF, borderColor, 2)
-
-		local em = label({
-			Text = count > 0 and c.emoji or "❓",
-			Font = Enum.Font.FredokaOne, TextTransparency = count > 0 and 0 or 0.4,
-			Position = UDim2.fromScale(0.1, 0.08), Size = UDim2.fromScale(0.8, 0.45), ZIndex = 64, Parent = cardF,
-		})
-		local nm = label({
-			Text = c.name, Font = Enum.Font.GothamBold,
-			TextColor3 = count > 0 and C.white or C.sub,
-			Position = UDim2.fromScale(0.05, 0.54), Size = UDim2.fromScale(0.9, 0.2), ZIndex = 64, Parent = cardF,
-		})
-		local cnt = label({
-			Text = count > 0 and ("x" .. count) or "ยังไม่มี",
-			Font = Enum.Font.GothamBlack,
-			TextColor3 = count > 0 and C.gold or Color3.fromRGB(150, 70, 70),
-			Position = UDim2.fromScale(0.05, 0.76), Size = UDim2.fromScale(0.9, 0.16), ZIndex = 64, Parent = cardF,
-		})
-	end
-end
-
-_G.GlueMenu.shop = openShopModal
-_G.GlueMenu.deck = openAlbumModal
-
-
-_G.GlueMenu.quest = function()
-	local profileData = Net and Net.invoke("GetProfile")
-	local quests = profileData and profileData.Quests
-	if quests and #quests > 0 then
-		local q = quests[1]
-		toast("📜 เควสต์: " .. tostring(q.Text or q.Id) .. (" (%d/%d)"):format(q.Progress or 0, q.Goal or 1), C.on)
-	else
-		toast("📜 เควสต์ประจำวัน: ชนะการดวลเพื่อรับเหรียญรางวัล!", C.on)
-	end
-end
-
-for i, m in ipairs(MENU) do
-	local b = make("TextButton", { Text = "", AutoButtonColor = false, Size = UDim2.fromOffset(78, 80), BackgroundTransparency = 1, LayoutOrder = i, Parent = menu })
-	local inner = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundColor3 = m.color, Parent = b })
-	corner(inner, UDim.new(0, 16))
-	stroke(inner, C.white, 2, 0.4)
-	make("UIGradient", { Color = ColorSequence.new(C.white, Color3.fromRGB(150, 150, 170)), Rotation = 90, Parent = inner })
-	local icon = label({ Text = m.icon, Position = UDim2.fromScale(0.2, 0.06), Size = UDim2.fromScale(0.6, 0.56), Parent = inner })
-	local t = label({ Text = m.text, Position = UDim2.fromScale(0.04, 0.66), Size = UDim2.fromScale(0.92, 0.26), Parent = inner })
-	make("UIStroke", { Thickness = 1.5, Parent = t })
-	local sc = make("UIScale", { Parent = inner })
-
-	if m.id == "quest" then
-		questDot = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -6, 0, 6), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = Color3.fromRGB(255, 50, 70), ZIndex = 3, Visible = false, Parent = inner })
-		corner(questDot, UDim.new(1, 0))
-		stroke(questDot, C.white, 2)
-		label({ Text = "!", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.2, 0.15), Size = UDim2.fromScale(0.6, 0.7), ZIndex = 4, Parent = questDot })
-	end
-
-	b.MouseEnter:Connect(function()
-		tween(sc, 0.15, { Scale = 1.1 }, Enum.EasingStyle.Back)
-		tween(icon, 0.4, { Rotation = m.id == "settings" and 180 or 12 }, Enum.EasingStyle.Back)
-		hoverSfx()
-	end)
-	b.MouseLeave:Connect(function()
-		tween(sc, 0.15, { Scale = 1 })
-		tween(icon, 0.3, { Rotation = 0 })
-	end)
-	b.MouseButton1Down:Connect(function() tween(sc, 0.08, { Scale = 0.9 }) end)
-	b.Activated:Connect(function()
-		tween(sc, 0.25, { Scale = 1 }, Enum.EasingStyle.Back)
-		click()
-		if m.id == "settings" then
-			openSettings()
-		elseif type(_G.GlueMenu[m.id]) == "function" then
-			local ok, err = pcall(_G.GlueMenu[m.id])
-			if not ok then warn("[GlueHUD] เปิด " .. m.id .. " ไม่สำเร็จ:", err) end
-		else
-			punch(icon, 1.6)
-			toast("🚧 " .. m.text .. " กำลังโหลด...", C.gold)
-		end
-	end)
-end
-
-local function refreshQuestDot()
-	if questDot then questDot.Visible = player:GetAttribute("GlueQuestReady") == true end
-end
-player:GetAttributeChangedSignal("GlueQuestReady"):Connect(refreshQuestDot)
-refreshQuestDot()
-
----------------------------------------------------------------------
--- ⚙️ 29) หน้าต่างตั้งค่าสีรุ้ง
----------------------------------------------------------------------
-local dim = make("TextButton", { Name = "SettingsDim", Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, Visible = false, ZIndex = 30, Parent = gui })
-local holder = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(440, 420), BackgroundTransparency = 1, ZIndex = 31, Parent = dim })
-autoScale(holder)
-local win = make("TextButton", { Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.panel, ZIndex = 31, Parent = holder })
-corner(win, UDim.new(0, 22))
-rainbowOn(stroke(win, C.white, 4), 120)
-local pop = make("UIScale", { Parent = win })
-
-local titleL = label({ Text = "⚙️ ตั้งค่าความกาว", Font = Enum.Font.GothamBlack, Position = UDim2.fromOffset(24, 16), Size = UDim2.fromOffset(300, 32), TextXAlignment = Enum.TextXAlignment.Left, Parent = win })
-make("UIStroke", { Thickness = 1.5, Parent = titleL })
-local closeBtn = make("TextButton", { Text = "✕", Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.white, AutoButtonColor = false, Position = UDim2.new(1, -48, 0, 16), Size = UDim2.fromOffset(32, 32), BackgroundColor3 = Color3.fromRGB(230, 60, 80), Parent = win })
-corner(closeBtn, UDim.new(1, 0))
-
-local function makeToggle(y, text, attr, onToggle)
-	local row = make("Frame", { Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(392, 44), BackgroundTransparency = 1, Parent = win })
-	label({ Text = text, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromScale(0, 0.15), Size = UDim2.fromScale(0.75, 0.7), Parent = row })
-	local tBtn = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.new(1, -64, 0.5, -16), Size = UDim2.fromOffset(64, 32), BackgroundColor3 = C.off, Parent = row })
-	corner(tBtn, UDim.new(1, 0))
-	local knob = make("Frame", { Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = C.white, Parent = tBtn })
-	corner(knob, UDim.new(1, 0))
-	local function sync()
-		local val = player:GetAttribute(attr) ~= false
-		tween(tBtn, 0.25, { BackgroundColor3 = val and C.on or C.off })
-		tween(knob, 0.25, { Position = val and UDim2.fromOffset(36, 4) or UDim2.fromOffset(4, 4) }, Enum.EasingStyle.Back)
-	end
-	tBtn.Activated:Connect(function()
-		local val = player:GetAttribute(attr) ~= false
-		player:SetAttribute(attr, not val)
-		click(val and 0.9 or 1.2)
-		punch(tBtn, 1.2)
-		sync()
-		if onToggle then onToggle(not val) end
-	end)
-	sync()
-end
-
-local function demoShake()
-	local cam = workspace.CurrentCamera
-	if not cam then return end
-	task.spawn(function()
-		for _ = 1, 8 do
-			cam.CFrame = cam.CFrame * CFrame.Angles(0, 0, math.rad(math.random(-3, 3)))
-			RunService.RenderStepped:Wait()
-		end
-	end)
-end
-
-local function demoRotate()
-	local cam = workspace.CurrentCamera
-	if not cam then return end
-	local orig = cam.CFrame
-	tween(cam, 0.2, { CFrame = orig * CFrame.Angles(0, 0, math.rad(12)) }, Enum.EasingStyle.Back)
-	task.delay(0.22, function() tween(cam, 0.3, { CFrame = orig }, Enum.EasingStyle.Back) end)
-end
-
-local activeSlider = nil
-local function makeSlider(y, text, attr)
-	local row = make("Frame", { Position = UDim2.fromOffset(24, y), Size = UDim2.fromOffset(392, 54), BackgroundTransparency = 1, Parent = win })
-	local nameLbl = label({ Text = text, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromScale(0, 0), Size = UDim2.fromScale(0.7, 0.45), Parent = row })
-	local valLbl = label({ Text = "100%", Font = Enum.Font.FredokaOne, TextColor3 = C.gold, TextXAlignment = Enum.TextXAlignment.Right, Position = UDim2.fromScale(0.7, 0), Size = UDim2.fromScale(0.3, 0.45), Parent = row })
-	local track = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = C.dark, Parent = row })
-	corner(track, UDim.new(1, 0))
-	local fill = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.glue, Parent = track })
-	corner(fill, UDim.new(1, 0))
-	make("UIGradient", { Color = ColorSequence.new(C.glue, Color3.fromRGB(120, 60, 255)), Parent = fill })
-	local thumb = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(1, 0.5), Size = UDim2.fromOffset(22, 22), BackgroundColor3 = C.white, Parent = track })
-	corner(thumb, UDim.new(1, 0))
-	stroke(thumb, C.panel, 2)
-	local function setVal(v, fire)
-		v = math.clamp(v, 0, 1)
-		fill.Size = UDim2.fromScale(v, 1)
-		thumb.Position = UDim2.fromScale(v, 0.5)
-		valLbl.Text = string.format("%d%%", math.round(v * 100))
-		if fire then player:SetAttribute(attr, v) end
-	end
-	setVal(player:GetAttribute(attr) or 1, false)
-	local dragging = false
-	local function update(input)
-		local x = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-		setVal(x, true)
-	end
-	track.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			activeSlider = track
-			punch(thumb, 1.4)
-			update(input)
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if dragging then click(0.9) end
-			dragging = false
-			if activeSlider == track then activeSlider = nil end
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			update(input)
-		end
-	end)
-end
-
-makeSlider(78, "🎵 เพลงพื้นหลัง", "GlueBGM")
-makeSlider(148, "🔊 เสียงเอฟเฟกต์", "GlueSFX")
-makeToggle(222, "📳 จอสั่นตอนโดนตี", "GlueShake", demoShake)
-makeToggle(274, "🙃 หมุนจอ (ปิดถ้าเวียนหัว)", "GlueRotate", demoRotate)
-
-local resetBtn = make("TextButton", { Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(110, 342), Size = UDim2.fromOffset(220, 50), BackgroundColor3 = C.white, Parent = win })
-corner(resetBtn, UDim.new(0.5, 0))
-make("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(90, 160, 255), Color3.fromRGB(60, 70, 200)), Rotation = 90, Parent = resetBtn })
-local resetL = label({ Text = "🔁 ค่าเริ่มต้น", Font = Enum.Font.GothamBlack, Position = UDim2.fromScale(0.1, 0.2), Size = UDim2.fromScale(0.8, 0.6), Parent = resetBtn })
-make("UIStroke", { Thickness = 1.5, Parent = resetL })
-resetBtn.Activated:Connect(function()
-	for k, v in pairs(DEFAULTS) do player:SetAttribute(k, v) end
-	click(1.1)
-	punch(resetBtn, 1.15)
-	toast("✅ คืนค่าเริ่มต้นแล้ว", C.on)
-end)
-
-local settingsOpen = false
-openSettings = function()
-	if settingsOpen then return end
-	settingsOpen = true
-	dim.Visible = true
-	dim.BackgroundTransparency = 1
-	tween(dim, 0.25, { BackgroundTransparency = 0.45 })
-	pop.Scale = 0
-	win.Rotation = -10
-	tween(pop, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
-	tween(win, 0.35, { Rotation = 0 }, Enum.EasingStyle.Back)
-	sfx("rbxasset://sounds/electronicpingshort.wav", 1.2, 0.3)
-end
-closeSettings = function()
-	if not settingsOpen then return end
-	settingsOpen = false
-	activeSlider = nil
-	tween(dim, 0.2, { BackgroundTransparency = 1 })
-	tween(pop, 0.2, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-	task.delay(0.22, function()
-		if not settingsOpen then dim.Visible = false end
-	end)
-end
-dim.Activated:Connect(closeSettings)
-closeBtn.Activated:Connect(function() click(0.8); closeSettings() end)
-
-
-
----------------------------------------------------------------------
--- 🎬 Intro + ซ่อนตอนดวล
----------------------------------------------------------------------
-local HOME = {
-	{ obj = profile, home = UDim2.fromOffset(12, 12), away = UDim2.fromOffset(-420, 12) },
-	{ obj = goldBadge, home = UDim2.fromOffset(344, 14), away = UDim2.fromOffset(-420, 14) },
-	{ obj = menu, home = UDim2.new(1, -12, 0.5, 0), away = UDim2.new(1, 220, 0.5, 0) },
-	{ obj = battleDock, home = UDim2.new(0.5, 0, 1, -16), away = UDim2.new(0.5, 0, 1, 220) },
-}
-local function intro()
-	for i, h in ipairs(HOME) do
-		h.obj.Position = h.away
-		task.delay((i - 1) * 0.1, function()
-			tween(h.obj, 0.6, { Position = h.home }, Enum.EasingStyle.Back)
+	if modalName == "Album" or modalName == "Quests" then
+		local ok, data = pcall(function()
+			return GetCollection:InvokeServer()
 		end)
+		if ok and type(data) == "table" then
+			clientState.collection = data.collection or clientState.collection
+			clientState.allCards = data.allCards or clientState.allCards
+			clientState.questsClaimed = data.questsClaimed or clientState.questsClaimed
+		end
+		if modalName == "Album" then
+			refreshAlbumGrid()
+		else
+			refreshQuestsUI()
+		end
+	elseif modalName == "Play" then
+		refreshCustomPlayerList()
+	end
+
+	modalBackdrop.Visible = true
+	target.Visible = true
+	local sc = target:FindFirstChildOfClass("UIScale")
+	if sc then
+		sc.Scale = 0.85
+		TweenService:Create(sc, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1.0,
+		}):Play()
 	end
 end
 
-local function syncDuel()
+local function updateHUDStats(newGold: number?)
+	local oldGold = clientState.gold
+	clientState.gold = tonumber(newGold or player:GetAttribute("Gold")) or clientState.gold
+	clientState.wins = tonumber(player:GetAttribute("GlueWins")) or clientState.wins
+	clientState.losses = tonumber(player:GetAttribute("GlueLosses")) or clientState.losses
+	clientState.streak = tonumber(player:GetAttribute("GlueStreak")) or clientState.streak
+
+	goldAmountLabel.Text = string.format("🪙 %d Gold", clientState.gold)
+	statSubLabel.Text = string.format("🏆 ชนะ %d  •  🔥 สตรีค %d", clientState.wins, clientState.streak)
+
+	local totalMatches = clientState.wins + clientState.losses
+	local xpTotal = (clientState.wins * 45) + (totalMatches * 15)
+	local lv = math.floor(xpTotal / 100) + 1
+	local xpCur = xpTotal % 100
+	levelLabel.Text = "LV." .. tostring(lv)
+	xpText.Text = string.format("XP %d / 100", xpCur)
+	TweenService:Create(xpBarFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = UDim2.new(math.clamp(xpCur / 100, 0.08, 1), 0, 1, 0),
+	}):Play()
+
+	if clientState.gold ~= oldGold then
+		bounceGoldBadge()
+	end
+end
+
+ProfileChanged.OnClientEvent:Connect(function(data: any)
+	if type(data) == "table" then
+		if data.Collection then clientState.collection = data.Collection end
+		if data.QuestsClaimed then clientState.questsClaimed = data.QuestsClaimed end
+		updateHUDStats(data.Gold)
+	end
+end)
+
+player:GetAttributeChangedSignal("Gold"):Connect(function()
+	updateHUDStats()
+end)
+player:GetAttributeChangedSignal("GlueWins"):Connect(function()
+	updateHUDStats()
+end)
+
+---------------------------------------------------------------------
+-- 4️⃣ Auto HUD Transition (เลื่อนเก็บเมื่อเข้าดวล GlueInDuel = true)
+---------------------------------------------------------------------
+local function syncDuelTransition()
 	local inDuel = player:GetAttribute("GlueInDuel") == true
 	if inDuel then
-		queueMode = nil
-		closeSettings()
-		if MenuKit and MenuKit.close then MenuKit.close() end
-		gui.Enabled = false
-	elseif not gui.Enabled then
-		gui.Enabled = true
-		refreshProfile()
-		intro()
+		closeAllModals()
+		invitePopup.Visible = false
+		clientState.inQueue = false
+		TweenService:Create(topLeftContainer, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Position = UDim2.fromOffset(22, -140),
+		}):Play()
+		TweenService:Create(battleDock, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Position = UDim2.new(0.5, 0, 1, 130),
+		}):Play()
+		TweenService:Create(quickBar, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Position = UDim2.new(1, 140, 0.5, 0),
+		}):Play()
+	else
+		updateHUDStats()
+		TweenService:Create(topLeftContainer, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = UDim2.fromOffset(22, 20),
+		}):Play()
+		TweenService:Create(battleDock, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0.5, 0, 1, -22),
+		}):Play()
+		TweenService:Create(quickBar, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = UDim2.new(1, -20, 0.5, 0),
+		}):Play()
 	end
 end
-player:GetAttributeChangedSignal("GlueInDuel"):Connect(syncDuel)
 
----------------------------------------------------------------------
--- 🎞️ Render loop
----------------------------------------------------------------------
-local clock, qCur, mCur = 0, 1, 1
-RunService.RenderStepped:Connect(function(dt)
-	if not gui.Enabled then return end
-	clock += dt
-	for i = #spinning, 1, -1 do
-		local s = spinning[i]
-		if s.g.Parent == nil then
-			table.remove(spinning, i)
-		else
-			s.g.Rotation = (s.g.Rotation + s.speed * dt) % 360
-		end
-	end
-	if rankRainbow then rankGrad.Rotation = (rankGrad.Rotation + 120 * dt) % 360 end
-	
-	-- อนิเมชันปุ่มดวลด่วน
-	qCur += (qTarget - qCur) * math.min(1, dt * 14)
-	qScale.Scale = qCur + math.sin(clock * 4) * 0.02
-	
-	-- อนิเมชันปุ่มเลือกโหมด
-	mCur += (mTarget - mCur) * math.min(1, dt * 14)
-	mScale.Scale = mCur + math.sin(clock * 4 + 1) * 0.02
-	
-	local t = clock % 2.5
-	shineGrad.Offset = Vector2.new(t < 0.8 and (-1 + t / 0.8 * 2) or 1, 0)
-	if questDot and questDot.Visible then
-		questDot.Position = UDim2.new(1, -6, 0, 6 - math.abs(math.sin(clock * 5)) * 8)
-	end
+player:GetAttributeChangedSignal("GlueInDuel"):Connect(syncDuelTransition)
+StartPvP.OnClientEvent:Connect(function()
+	closeAllModals()
 end)
 
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-	updateScale()
-	if workspace.CurrentCamera then
-		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+-- หมุนขอบรุ้งอวาตาร์และปุ่มดวลด่วนตลอดเวลา
+RunService.RenderStepped:Connect(function(dt: number)
+	rainbowGrad.Rotation = (rainbowGrad.Rotation + dt * 95) % 360
+	quickGrad.Rotation = (quickGrad.Rotation + dt * 120) % 360
+end)
+
+-- โหลดข้อมูลคลังการ์ดเริ่มต้น
+task.spawn(function()
+	local ok, data = pcall(function()
+		return GetCollection:InvokeServer()
+	end)
+	if ok and type(data) == "table" then
+		clientState.collection = data.collection or {}
+		clientState.allCards = data.allCards or {}
+		clientState.questsClaimed = data.questsClaimed or {}
+		updateHUDStats(data.gold)
+	else
+		updateHUDStats()
 	end
 end)
-if workspace.CurrentCamera then
-	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
-end
-updateScale()
-
-gui.Enabled = player:GetAttribute("GlueInDuel") ~= true
-if gui.Enabled then intro() end

@@ -1,739 +1,796 @@
+--!strict
 --[[
-	🃏 GlueCardServer — เซิร์ฟเวอร์หลักของระบบดวลการ์ดกาว (Chaos Card Battler)
-	• คุมโต๊ะดวล 3D (GlueDuelTable) + ระบบดวลด่วน (QuickPlay)
-	• ระบบความยากของบอท: Easy, Normal/Medium, Hard, Hacker, Mix, Tower
-	• บันทึกข้อมูลถาวร (DataService + leaderstats): Gold, Wins, Losses, Streaks, Collection
-	• ระบบร้านค้าซื้อซองการ์ดกาว (BuyPack Gacha)
-	• เซิร์ฟเวอร์ Remotes รองรับ Profile / Leaderboard
+	🃏 GlueCardServer.server.lua
+	ระบบเซิร์ฟเวอร์หลัก Gawa Card Battle (Complete Edition)
+	• DataStoreService ("GawaPlayer_v1") + Autosave 120s + BindToClose + leaderstats
+	• กาชาเปิดซอง (BuyPack 100 Gold -> 3 ใบ: Common 60%, Rare 28%, Legendary 9%, Glue 3%)
+	• ระบบ PvE บอท 5 ระดับ (Easy, Medium, Hard, Hacker, Mix)
+	• ระบบ Real PvP 1v1 Queue (+150G ชนะ / +40G ปลอบใจ)
+	• ระบบ Custom PvP 1v1 เลือกคนท้าดวลเจาะจง (0 Gold ไม่เสีย/ไม่ได้เหรียญ)
+	• Server Action Relay (PlayCard, Attack, Spell, Ult, EndTurn, Taunt) + Forfeit Protection
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
+local DataStoreService = game:GetService("DataStoreService")
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 ---------------------------------------------------------------------
--- ⚙️ ค่าคอนฟิกเซิร์ฟเวอร์
+-- 📡 สร้างโฟลเดอร์ GlueCardRemotes และ Remote ทั้งหมด
 ---------------------------------------------------------------------
-local CONFIG = {
-	TABLE_TAG = "GlueDuelTable",
-	PROMPT_RANGE = 14,
-	MAX_TABLE_DISTANCE = 40,
-	MIN_WIN_SECONDS = 25,      -- ความเร็วต่ำสุดในการชนะ
-	MIN_WIN_TURNS = 4,
-	MIN_LOSE_SECONDS = 15,
-	SECONDS_PER_TURN = 1.0,
-	MAX_TURNS = 300,
-	MAX_REWARDS_PER_HOUR = 25,
-	PACK_COST_GOLD = 100,
-}
-
-local BOT_DIFFICULTIES = {
-	Easy = {
-		name = "หุ่นฝึกซ้อม (ง่าย)",
-		avatar = "🤖",
-		thinkTime = 1.3,
-		mistakeChance = 0.35,
-		winGold = 60,
-		loseGold = 20,
-	},
-	Medium = {
-		name = "บอทลุงกาว 🤖",
-		avatar = "🤖",
-		thinkTime = 0.9,
-		mistakeChance = 0.1,
-		winGold = 100,
-		loseGold = 25,
-	},
-	Normal = {
-		name = "บอทลุงกาว 🤖",
-		avatar = "🤖",
-		thinkTime = 0.9,
-		mistakeChance = 0.1,
-		winGold = 100,
-		loseGold = 25,
-	},
-	Hard = {
-		name = "ลุงกาวหัวร้อน 🔥",
-		avatar = "😡",
-		thinkTime = 0.6,
-		mistakeChance = 0.0,
-		winGold = 160,
-		loseGold = 35,
-	},
-	Hacker = {
-		name = "แฮกเกอร์สายกาว 👾",
-		avatar = "👾",
-		thinkTime = 0.4,
-		mistakeChance = 0.0,
-		cheatMana = 1,
-		winGold = 250,
-		loseGold = 45,
-	},
-	Mix = {
-		name = "สุ่มระดับความกาว 🎲",
-		avatar = "🎲",
-		bonusGold = 50,
-	},
-	Tower = {
-		name = "หอคอยแห่งความกาว 🗼",
-		avatar = "🗼",
-		winGold = 120,
-		loseGold = 30,
-	},
-}
-
--- รายชื่อการ์ดสำหรับสุ่มเปิดซอง
-local CHAOS_CARDS = {
-	Common = {
-		{ id = "chicken", name = "ไก่ย่างอมตะ", emoji = "🐔", cost = 1, atk = 500, hp = 500 },
-		{ id = "cat", name = "แมวส้มจอมป่วน", emoji = "🐈", cost = 1, atk = 700, hp = 300 },
-		{ id = "dog", name = "หมาวัดตัวตึง", emoji = "🐕", cost = 2, atk = 500, hp = 1500 },
-		{ id = "frog", name = "กบร้องเพลงลูกทุ่ง", emoji = "🐸", cost = 2, atk = 400, hp = 800 },
-		{ id = "dino", name = "ไดโนแขนสั้น", emoji = "🦖", cost = 4, atk = 2000, hp = 1600 },
-		{ id = "banana", name = "เปลือกกล้วย", emoji = "🍌", cost = 1, kind = "Spell" },
-		{ id = "mookata", name = "หมูกระทะฟื้นพลัง", emoji = "🥓", cost = 2, kind = "Spell" },
-		{ id = "coffee", name = "กาแฟ 3 แก้ว", emoji = "☕", cost = 1, kind = "Spell" },
-		{ id = "gluetube", name = "กาวตราช้าง", emoji = "🧪", cost = 0, kind = "Spell" },
-	},
-	Rare = {
-		{ id = "uncle", name = "ลุงวินซิ่งนรก", emoji = "🛵", cost = 3, atk = 1200, hp = 800 },
-		{ id = "raccoon", name = "แรคคูนขโมยหมูปิ้ง", emoji = "🦝", cost = 2, atk = 600, hp = 900 },
-		{ id = "monkey", name = "ลิงขโมยมือถือ", emoji = "🐒", cost = 3, atk = 900, hp = 700 },
-		{ id = "durian", name = "ทุเรียนพลีชีพ", emoji = "🍈", cost = 3, atk = 800, hp = 1000 },
-		{ id = "ninja", name = "นินจาหนีหนี้", emoji = "🥷", cost = 3, atk = 1100, hp = 700 },
-		{ id = "zombie", name = "ซอมบี้มนุษย์เงินเดือน", emoji = "🧟", cost = 4, atk = 1200, hp = 1300 },
-		{ id = "slipper", name = "รองเท้าแตะแม่", emoji = "👡", cost = 2, kind = "Spell" },
-		{ id = "bomb", name = "ระเบิดปลาร้า", emoji = "💣", cost = 4, kind = "Spell" },
-		{ id = "momcall", name = "เสียงแม่เรียก", emoji = "📢", cost = 3, kind = "Spell" },
-		{ id = "lag", name = "เน็ตหลุด", emoji = "📶", cost = 3, kind = "Spell" },
-	},
-	Legendary = {
-		{ id = "grandma", name = "ยายรองเท้าแตะ", emoji = "👵", cost = 4, atk = 1300, hp = 1600 },
-		{ id = "wizard", name = "พ่อมดไลฟ์สด", emoji = "🧙", cost = 5, atk = 1500, hp = 1500 },
-		{ id = "buffalo", name = "ควายบึ้กพลังช้าง", emoji = "🐃", cost = 6, atk = 2500, hp = 2500 },
-	},
-	Glue = {
-		{ id = "clown", name = "ตัวตลกหัวร้อน", emoji = "🤡", cost = 3, atk = 1000, hp = 1000 },
-		{ id = "duck", name = "เป็ดยางพิฆาต", emoji = "🦆", cost = 1, atk = 100, hp = 100 },
-		{ id = "dragon", name = "มังกรกาวพันปี", emoji = "🐉", cost = 7, atk = 3000, hp = 3000 },
-		{ id = "dice", name = "ลูกเต๋ากาว", emoji = "🎲", cost = 2, kind = "Spell" },
-	},
-}
-
----------------------------------------------------------------------
--- 📡 1) Remotes จัดการ
----------------------------------------------------------------------
--- โฟลเดอร์ GlueCardRemotes
-local glueFolder = ReplicatedStorage:FindFirstChild("GlueCardRemotes") or Instance.new("Folder")
-glueFolder.Name = "GlueCardRemotes"
-
-local function glueRemote(className, name)
-	local r = glueFolder:FindFirstChild(name) or Instance.new(className)
-	r.Name = name
-	r.Parent = glueFolder
-	return r
+local glueFolder = ReplicatedStorage:FindFirstChild("GlueCardRemotes") :: Folder
+if not glueFolder then
+	glueFolder = Instance.new("Folder")
+	glueFolder.Name = "GlueCardRemotes"
+	glueFolder.Parent = ReplicatedStorage
 end
 
-local OpenTable = glueRemote("RemoteEvent", "OpenTable")
-local LeaveTable = glueRemote("RemoteEvent", "LeaveTable")
-local NewMatch = glueRemote("RemoteFunction", "NewMatch")
-local ReportResult = glueRemote("RemoteFunction", "ReportResult")
-local QuickPlay = glueRemote("RemoteEvent", "QuickPlay")
-local BuyPack = glueRemote("RemoteFunction", "BuyPack")
-local GetCollection = glueRemote("RemoteFunction", "GetCollection")
-
--- ⚔️ PvP Online Remotes
-local JoinPvPQueue = glueRemote("RemoteEvent", "JoinPvPQueue")
-local LeavePvPQueue = glueRemote("RemoteEvent", "LeavePvPQueue")
-local StartPvP = glueRemote("RemoteEvent", "StartPvP")
-local PvPAction = glueRemote("RemoteEvent", "PvPAction")
-local PvPActionRelay = glueRemote("RemoteEvent", "PvPActionRelay")
-local PvPMatchEnd = glueRemote("RemoteEvent", "PvPMatchEnd")
-
-glueFolder.Parent = ReplicatedStorage
-
--- โฟลเดอร์ Remotes ทั่วไป (สำหรับ UI ระบบโปรไฟล์ / แจ้งเตือน)
-local mainFolder = ReplicatedStorage:FindFirstChild("Remotes") or Instance.new("Folder")
-mainFolder.Name = "Remotes"
-
-local function mainRemote(className, name)
-	local r = mainFolder:FindFirstChild(name) or Instance.new(className)
-	r.Name = name
-	r.Parent = mainFolder
-	return r
-end
-
-local GetPublicProfile = mainRemote("RemoteFunction", "GetPublicProfile")
-local GetProfile = mainRemote("RemoteFunction", "GetProfile")
-local SaveDeck = mainRemote("RemoteFunction", "SaveDeck")
-local ProfileChanged = mainRemote("RemoteEvent", "ProfileChanged")
-local NotificationRE = mainRemote("RemoteEvent", "Notification")
-mainFolder.Parent = ReplicatedStorage
-
----------------------------------------------------------------------
--- 💾 2) DataService & Leaderstats
----------------------------------------------------------------------
-local DataService
-do
-	local modules = ServerStorage:FindFirstChild("Modules")
-	local mod = modules and modules:FindFirstChild("DataService")
-	if mod then
-		local ok, res = pcall(require, mod)
-		if ok then DataService = res else warn("[GlueCardServer] require DataService ไม่สำเร็จ:", res) end
+local function ensureRemote(className: string, name: string): any
+	local existing = glueFolder:FindFirstChild(name)
+	if existing and existing.ClassName == className then
+		return existing
 	end
+	if existing then
+		existing:Destroy()
+	end
+	local inst = Instance.new(className)
+	inst.Name = name
+	inst.Parent = glueFolder
+	return inst
 end
 
-local function ensureLeaderstats(player)
-	local ls = player:FindFirstChild("leaderstats")
+-- Core Match & Economy Remotes
+local OpenTable = ensureRemote("RemoteEvent", "OpenTable") :: RemoteEvent
+local LeaveTable = ensureRemote("RemoteEvent", "LeaveTable") :: RemoteEvent
+local QuickPlay = ensureRemote("RemoteEvent", "QuickPlay") :: RemoteEvent
+local ProfileChanged = ensureRemote("RemoteEvent", "ProfileChanged") :: RemoteEvent
+local NewMatch = ensureRemote("RemoteFunction", "NewMatch") :: RemoteFunction
+local ReportResult = ensureRemote("RemoteFunction", "ReportResult") :: RemoteFunction
+local BuyPack = ensureRemote("RemoteFunction", "BuyPack") :: RemoteFunction
+local GetCollection = ensureRemote("RemoteFunction", "GetCollection") :: RemoteFunction
+local ClaimQuest = ensureRemote("RemoteFunction", "ClaimQuest") :: RemoteFunction
+
+-- PvP Queue & Relay Remotes
+local JoinPvPQueue = ensureRemote("RemoteEvent", "JoinPvPQueue") :: RemoteEvent
+local LeavePvPQueue = ensureRemote("RemoteEvent", "LeavePvPQueue") :: RemoteEvent
+local StartPvP = ensureRemote("RemoteEvent", "StartPvP") :: RemoteEvent
+local PvPAction = ensureRemote("RemoteEvent", "PvPAction") :: RemoteEvent
+local PvPActionRelay = ensureRemote("RemoteEvent", "PvPActionRelay") :: RemoteEvent
+local PvPMatchEnd = ensureRemote("RemoteEvent", "PvPMatchEnd") :: RemoteEvent
+
+-- Custom PvP Direct Challenge Remotes (โหมดเจาะจง 0 Gold)
+local SendCustomChallenge = ensureRemote("RemoteEvent", "SendCustomChallenge") :: RemoteEvent
+local IncomingCustomChallenge = ensureRemote("RemoteEvent", "IncomingCustomChallenge") :: RemoteEvent
+local RespondCustomChallenge = ensureRemote("RemoteEvent", "RespondCustomChallenge") :: RemoteEvent
+
+---------------------------------------------------------------------
+-- 🃏 ฐานข้อมูลการ์ดกาวทั้ง 26 ใบ (Chaos Card Pool)
+---------------------------------------------------------------------
+export type CardDef = {
+	id: string,
+	name: string,
+	emoji: string,
+	rarity: string,
+	cardType: string,
+	cost: number,
+	atk: number,
+	hp: number,
+	desc: string,
+}
+
+local ALL_CARDS: { CardDef } = {
+	-- Monsters (17 ใบ)
+	{ id = "chicken", name = "ไก่ย่างอมตะ", emoji = "🐔", rarity = "Common", cardType = "Monster", cost = 2, atk = 700, hp = 800, desc = "ฟื้นชีพ (Rebirth): ตายแล้วลุกขึ้นมาใหม่ด้วยเลือด 50% 1 ครั้ง" },
+	{ id = "cat", name = "แมวส้มจอมป่วน", emoji = "🐈", rarity = "Common", cardType = "Monster", cost = 2, atk = 900, hp = 700, desc = "ซิ่ง (Rush): โจมตีได้ทันทีในเทิร์นที่ลงสนาม!" },
+	{ id = "dog", name = "หมาวัดตัวตึง", emoji = "🐕", rarity = "Common", cardType = "Monster", cost = 3, atk = 800, hp = 1500, desc = "โล่ (Taunt): บังคับให้ศัตรูต้องตีเจ้าตูบตัวนี้ก่อน" },
+	{ id = "frog", name = "กบร้องเพลงลูกทุ่ง", emoji = "🐸", rarity = "Common", cardType = "Monster", cost = 3, atk = 800, hp = 1000, desc = "ลงสนาม: เรียกลูกอ๊อดวัยซน (500/500) ลงช่องว่างข้างๆ" },
+	{ id = "uncle", name = "ลุงวินซิ่งนรก", emoji = "🛵", rarity = "Rare", cardType = "Monster", cost = 4, atk = 1400, hp = 1100, desc = "ซิ่ง (Rush): บิดหมดปลอก พุ่งชนได้ทันทีที่ลงสนาม" },
+	{ id = "raccoon", name = "แรคคูนขโมยหมูปิ้ง", emoji = "🦝", rarity = "Rare", cardType = "Monster", cost = 3, atk = 1000, hp = 1200, desc = "ต้นเทิร์นเรา: ดูด 300 LP จากฮีโร่ศัตรูมาเพิ่มให้เรา" },
+	{ id = "monkey", name = "ลิงขโมยมือถือ", emoji = "🐒", rarity = "Rare", cardType = "Monster", cost = 3, atk = 1100, hp = 1000, desc = "ซิ่งดูด LP 250 เมื่อโจมตี + มีโอกาสหลบหลีก (Dodge 25%)" },
+	{ id = "durian", name = "ทุเรียนพลีชีพ", emoji = "🍈", rarity = "Rare", cardType = "Monster", cost = 3, atk = 900, hp = 1100, desc = "พลีชีพ: เมื่อตาย ระเบิดกลิ่นทุเรียนใส่ศัตรูทุกตัว 600 ดาเมจ!" },
+	{ id = "ninja", name = "นินจาหนีหนี้", emoji = "🥷", rarity = "Rare", cardType = "Monster", cost = 4, atk = 1500, hp = 1000, desc = "หลบเก่งจัด: มีโอกาส 40% หลบการโจมตีแบบไร้รอยขีดข่วน" },
+	{ id = "zombie", name = "ซอมบี้มนุษย์เงินเดือน", emoji = "🧟", rarity = "Common", cardType = "Monster", cost = 4, atk = 1100, hp = 1400, desc = "ฟื้นชีพ (Rebirth): ตายไม่ได้เพราะยังผ่อนรถไม่หมด!" },
+	{ id = "dino", name = "ไดโนแขนสั้น", emoji = "🦖", rarity = "Legendary", cardType = "Monster", cost = 5, atk = 2300, hp = 1800, desc = "พลังตบมหาศาล แต่แขนสั้นจัด มีโอกาสตีวืด 25%" },
+	{ id = "grandma", name = "ยายรองเท้าแตะ", emoji = "👵", rarity = "Legendary", cardType = "Monster", cost = 4, atk = 1300, hp = 1400, desc = "ลงสนาม: ปารองเท้าแตะใส่ศัตรูแบบสุ่ม 700 ดาเมจทันที" },
+	{ id = "wizard", name = "พ่อมดไลฟ์สด", emoji = "🧙", rarity = "Rare", cardType = "Monster", cost = 4, atk = 1100, hp = 1200, desc = "ลงสนาม: กดกระดิ่งไลฟ์สด จั่วการ์ดเพิ่ม 2 ใบทันที!" },
+	{ id = "buffalo", name = "ควายบึ้กพลังช้าง", emoji = "🐃", rarity = "Legendary", cardType = "Monster", cost = 6, atk = 2000, hp = 2400, desc = "โล่ (Taunt) + ซิ่ง (Rush): วิ่งชนแหลก ถึกทนทานสุดในรุ่น" },
+	{ id = "clown", name = "ตัวตลกหัวร้อน", emoji = "🤡", rarity = "Rare", cardType = "Monster", cost = 3, atk = 1200, hp = 1200, desc = "ลงสนาม: สลับค่า ATK กับ HP ของมอนสเตอร์ศัตรูทุกตัว!" },
+	{ id = "duck", name = "เป็ดยางพิฆาต", emoji = "🦆", rarity = "Common", cardType = "Monster", cost = 2, atk = 800, hp = 700, desc = "หลบหลีก 30% และเมื่อตายระเบิดเสียงก๊าบใส่ศัตรูทุกตัว 450" },
+	{ id = "dragon", name = "มังกรกาวพันปี", emoji = "🐉", rarity = "Glue", cardType = "Monster", cost = 7, atk = 2500, hp = 2500, desc = "บอสใหญ่สายกาว! ลงสนามปุ๊บ เติมหลอดกาว +50% ทันที!" },
+
+	-- Spells (9 ใบ)
+	{ id = "banana", name = "เปลือกกล้วย", emoji = "🍌", rarity = "Common", cardType = "Spell", cost = 2, atk = 0, hp = 0, desc = "วางกับดัก: ศัตรูที่สั่งโจมตีครั้งถัดไปจะลื่นล้มหัวฟาด 600 ดาเมจและอดตี!" },
+	{ id = "slipper", name = "รองเท้าแตะแม่", emoji = "👡", rarity = "Rare", cardType = "Spell", cost = 4, atk = 0, hp = 0, desc = "ปาแม่นราวจับวาง! ทำดาเมจ 1,500 ใส่มอนสเตอร์ศัตรูที่ ATK สูงสุด" },
+	{ id = "bomb", name = "ระเบิดปลาร้า", emoji = "💣", rarity = "Rare", cardType = "Spell", cost = 4, atk = 0, hp = 0, desc = "ไหปลาร้าแตก! ทำดาเมจ 800 ใส่มอนสเตอร์ศัตรูทุกตัวบนสนาม" },
+	{ id = "dice", name = "ลูกเต๋ากาว", emoji = "🎲", rarity = "Glue", cardType = "Spell", cost = 3, atk = 0, hp = 0, desc = "ทอยเต๋า 1-6 สุ่มผลสุดปั่น (1=เจ็บเอง 500, 6=เสกยูนิคอร์น 2200/2000!)" },
+	{ id = "mookata", name = "หมูกระทะฟื้นพลัง", emoji = "🥓", rarity = "Common", cardType = "Spell", cost = 3, atk = 0, hp = 0, desc = "เยียวยาทุกสิ่ง: ฟื้น 1,500 LP ฮีโร่เรา และฮีลมอนสเตอร์เราทุกตัว +600" },
+	{ id = "momcall", name = "เสียงแม่เรียก", emoji = "📢", rarity = "Rare", cardType = "Spell", cost = 3, atk = 0, hp = 0, desc = "แม่เรียกกินข้าว! ดีดมอนสเตอร์ศัตรูที่เก่งที่สุดกลับขึ้นมือ" },
+	{ id = "coffee", name = "กาแฟ 3 แก้ว", emoji = "☕", rarity = "Legendary", cardType = "Spell", cost = 4, atk = 0, hp = 0, desc = "ดีดจัด! มอนสเตอร์เราทุกตัว ATK +300 และพร้อมโจมตีอีกครั้ง" },
+	{ id = "lag", name = "เน็ตหลุด", emoji = "📶", rarity = "Legendary", cardType = "Spell", cost = 4, atk = 0, hp = 0, desc = "ปิง 999ms! แช่แข็งมอนสเตอร์ศัตรูทุกตัว ห้ามโจมตี 1 เทิร์น" },
+	{ id = "gluetube", name = "กาวตราช้าง", emoji = "🧪", rarity = "Glue", cardType = "Spell", cost = 2, atk = 0, hp = 0, desc = "เติมหลอดกาวไม้ตาย +35% ทันที และจั่วการ์ดเพิ่ม 1 ใบ" },
+}
+
+local CARDS_BY_RARITY: { [string]: { CardDef } } = {
+	Common = {},
+	Rare = {},
+	Legendary = {},
+	Glue = {},
+}
+for _, c in ipairs(ALL_CARDS) do
+	table.insert(CARDS_BY_RARITY[c.rarity], c)
+end
+
+---------------------------------------------------------------------
+-- 🤖 ตั้งค่าบอท 5 ระดับความยาก (PvE Bot Difficulties)
+---------------------------------------------------------------------
+local BOT_DIFFICULTIES: { [string]: { name: string, thinkTime: number, mistakeChance: number, reward: number, cheatMana: number } } = {
+	Easy = { name = "🟢 หุ่นฝึกซ้อม", thinkTime = 1.3, mistakeChance = 0.35, reward = 60, cheatMana = 0 },
+	Medium = { name = "🟡 บอทลุงกาว", thinkTime = 0.9, mistakeChance = 0.15, reward = 100, cheatMana = 0 },
+	Normal = { name = "🟡 บอทลุงกาว", thinkTime = 0.9, mistakeChance = 0.15, reward = 100, cheatMana = 0 },
+	Hard = { name = "🟠 ลุงกาวหัวร้อน", thinkTime = 0.6, mistakeChance = 0.0, reward = 160, cheatMana = 0 },
+	Hacker = { name = "🔴 แฮกเกอร์สายกาว", thinkTime = 0.4, mistakeChance = 0.0, reward = 250, cheatMana = 1 },
+}
+
+---------------------------------------------------------------------
+-- 💾 ระบบข้อมูลผู้เล่นถาวร (DataStore "GawaPlayer_v1")
+---------------------------------------------------------------------
+export type PlayerProfile = {
+	Gold: number,
+	Wins: number,
+	Losses: number,
+	Streak: number,
+	BestStreak: number,
+	PacksOpened: number,
+	Collection: { [string]: number },
+	QuestsClaimed: { [string]: boolean },
+}
+
+local playerStore: DataStore? = nil
+pcall(function()
+	playerStore = DataStoreService:GetDataStore("GawaPlayer_v1")
+end)
+
+local profiles: { [number]: PlayerProfile } = {}
+
+local function defaultProfile(): PlayerProfile
+	return {
+		Gold = 300, -- เงินเริ่มต้นเปิดซองได้ทันที 3 ซอง!
+		Wins = 0,
+		Losses = 0,
+		Streak = 0,
+		BestStreak = 0,
+		PacksOpened = 0,
+		Collection = {
+			chicken = 2,
+			cat = 2,
+			dog = 2,
+			frog = 1,
+			banana = 2,
+			mookata = 1,
+			gluetube = 1,
+		},
+		QuestsClaimed = {},
+	}
+end
+
+local function reconcileProfile(raw: any): PlayerProfile
+	local def = defaultProfile()
+	if type(raw) ~= "table" then
+		return def
+	end
+	def.Gold = tonumber(raw.Gold) or def.Gold
+	def.Wins = tonumber(raw.Wins) or 0
+	def.Losses = tonumber(raw.Losses) or 0
+	def.Streak = tonumber(raw.Streak) or 0
+	def.BestStreak = tonumber(raw.BestStreak) or 0
+	def.PacksOpened = tonumber(raw.PacksOpened) or 0
+	if type(raw.Collection) == "table" then
+		def.Collection = {}
+		for k, v in pairs(raw.Collection) do
+			if type(k) == "string" and tonumber(v) and tonumber(v) > 0 then
+				def.Collection[k] = math.floor(tonumber(v) :: number)
+			end
+		end
+	end
+	if type(raw.QuestsClaimed) == "table" then
+		for k, v in pairs(raw.QuestsClaimed) do
+			def.QuestsClaimed[tostring(k)] = (v == true)
+		end
+	end
+	return def
+end
+
+local function syncPlayerStats(player: Player)
+	local prof = profiles[player.UserId]
+	if not prof then return end
+
+	local ls = player:FindFirstChild("leaderstats") :: Folder
 	if not ls then
 		ls = Instance.new("Folder")
 		ls.Name = "leaderstats"
 		ls.Parent = player
 	end
-	local g = ls:FindFirstChild("Gold")
-	if not g then
-		g = Instance.new("IntValue")
-		g.Name = "Gold"
-		g.Value = player:GetAttribute("Gold") or 500
-		g.Parent = ls
+	local goldVal = ls:FindFirstChild("Gold") :: IntValue
+	if not goldVal then
+		goldVal = Instance.new("IntValue")
+		goldVal.Name = "Gold"
+		goldVal.Parent = ls
 	end
-	local w = ls:FindFirstChild("Wins")
-	if not w then
-		w = Instance.new("IntValue")
-		w.Name = "Wins"
-		w.Value = player:GetAttribute("GlueWins") or 0
-		w.Parent = ls
+	local winsVal = ls:FindFirstChild("Wins") :: IntValue
+	if not winsVal then
+		winsVal = Instance.new("IntValue")
+		winsVal.Name = "Wins"
+		winsVal.Parent = ls
 	end
-	return ls, g, w
+
+	goldVal.Value = prof.Gold
+	winsVal.Value = prof.Wins
+
+	player:SetAttribute("Gold", prof.Gold)
+	player:SetAttribute("GlueWins", prof.Wins)
+	player:SetAttribute("GlueLosses", prof.Losses)
+	player:SetAttribute("GlueMatches", prof.Wins + prof.Losses)
+	player:SetAttribute("GlueStreak", prof.Streak)
+	player:SetAttribute("GluePacksOpened", prof.PacksOpened)
+
+	ProfileChanged:FireClient(player, {
+		Gold = prof.Gold,
+		Wins = prof.Wins,
+		Losses = prof.Losses,
+		Streak = prof.Streak,
+		PacksOpened = prof.PacksOpened,
+		Collection = prof.Collection,
+		QuestsClaimed = prof.QuestsClaimed,
+	})
 end
 
-local function syncPlayerStats(player)
-	if not player or not player.Parent then return end
-	local data = DataService and DataService.GetData(player)
-	local gold = (data and data.Gold) or player:GetAttribute("Gold") or 500
-	local wins = (data and data.Wins) or player:GetAttribute("GlueWins") or 0
-	local losses = (data and data.Losses) or 0
-	local streak = (data and data.Streak) or player:GetAttribute("Streak") or 0
-
-	player:SetAttribute("Gold", gold)
-	player:SetAttribute("GlueWins", wins)
-	player:SetAttribute("GlueMatches", wins + losses)
-	player:SetAttribute("Streak", streak)
-
-	local _, g, w = ensureLeaderstats(player)
-	if g then g.Value = gold end
-	if w then w.Value = wins end
-end
-
-local function onPlayerJoined(player)
-	ensureLeaderstats(player)
-	if DataService then
-		task.spawn(function()
-			DataService.Load(player)
-			syncPlayerStats(player)
+local function loadProfile(player: Player)
+	local loaded: any = nil
+	if playerStore then
+		local ok, res = pcall(function()
+			return (playerStore :: DataStore):GetAsync("Player_" .. tostring(player.UserId))
 		end)
-	end
-end
-
-local function onPlayerLeaving(player)
-	if DataService then
-		DataService.Release(player)
-	end
-end
-
-Players.PlayerAdded:Connect(onPlayerJoined)
-for _, p in ipairs(Players:GetPlayers()) do task.spawn(onPlayerJoined, p) end
-Players.PlayerRemoving:Connect(onPlayerLeaving)
-
-game:BindToClose(function()
-	if DataService then
-		DataService.SaveAll()
-	end
-end)
-
-local function grantReward(player, gold, won, turns)
-	if DataService and type(DataService.RecordResult) == "function" then
-		pcall(DataService.RecordResult, player, won)
-	end
-
-	if DataService and type(DataService.AddGold) == "function" then
-		local ok, err = pcall(DataService.AddGold, player, gold)
 		if ok then
-			syncPlayerStats(player)
-			return true
+			loaded = res
 		end
-		warn("[GlueCardServer] AddGold error:", err)
-		return false
 	end
-
-	-- สำรองกรณีไม่มี DataService
-	local curGold = (player:GetAttribute("Gold") or 500) + gold
-	player:SetAttribute("Gold", curGold)
-	if won then
-		player:SetAttribute("GlueWins", (player:GetAttribute("GlueWins") or 0) + 1)
+	profiles[player.UserId] = reconcileProfile(loaded)
+	if player:GetAttribute("GlueInDuel") == nil then
+		player:SetAttribute("GlueInDuel", false)
 	end
-	local _, g, w = ensureLeaderstats(player)
-	if g then g.Value = curGold end
-	if w and won then w.Value += 1 end
-	return true
+	syncPlayerStats(player)
 end
 
----------------------------------------------------------------------
--- 🪑 3) Session & แมตช์
----------------------------------------------------------------------
-local sessions = {}   -- [player] = { tbl, matchId, startedAt, difficulty, mode, isMix }
-local rewardLog = {}  -- [userId] = { เวลาที่รับรางวัล }
-
-local function distanceTo(player, tbl)
-	local char = player.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if not hrp or not tbl or not tbl.Parent then return math.huge end
-	return (hrp.Position - tbl:GetPivot().Position).Magnitude
-end
-
-local function takeRewardSlot(player)
-	local now = os.time()
-	local fresh = {}
-	for _, t in ipairs(rewardLog[player.UserId] or {}) do
-		if now - t < 3600 then table.insert(fresh, t) end
-	end
-	rewardLog[player.UserId] = fresh
-	if #fresh >= CONFIG.MAX_REWARDS_PER_HOUR then return false end
-	table.insert(fresh, now)
-	return true
-end
-
-local function onTableTriggered(player, tbl)
-	if distanceTo(player, tbl) > CONFIG.MAX_TABLE_DISTANCE then return end
-	sessions[player] = { tbl = tbl, difficulty = "Medium", mode = "Table" }
-	OpenTable:FireClient(player, tbl, { difficulty = "Medium", mode = "Table" })
-end
-
-NewMatch.OnServerInvoke = function(player, options)
-	local s = sessions[player]
-	if not s then return nil end
-	if not s.quick and distanceTo(player, s.tbl) > CONFIG.MAX_TABLE_DISTANCE then
-		sessions[player] = nil
-		return nil
-	end
-	
-	if typeof(options) == "table" then
-		if options.difficulty then s.difficulty = options.difficulty end
-		if options.mode then s.mode = options.mode end
-	end
-	
-	s.matchId = HttpService:GenerateGUID(false)
-	s.startedAt = os.clock()
-	return s.matchId
-end
-
-ReportResult.OnServerInvoke = function(player, matchId, data)
-	if type(matchId) ~= "string" or #matchId > 64 or type(data) ~= "table" then
-		return { ok = false, reason = "ข้อมูลไม่ถูกต้อง" }
-	end
-	local s = sessions[player]
-	if not s or not s.matchId or s.matchId ~= matchId then
-		return { ok = false, reason = "ไม่พบแมตช์นี้ (หรือส่งผลไปแล้ว)" }
-	end
-	local duration = os.clock() - s.startedAt
-	local chosenDiff = s.difficulty or "Medium"
-	local isMix = s.isMix == true
-	local mode = s.mode or "Normal"
-	s.matchId, s.startedAt = nil, nil -- ใช้รหัสแมตช์ได้ครั้งเดียว
-
-	local won = data.won == true
-	local turns = tonumber(data.turns)
-	if not turns or turns ~= turns or turns % 1 ~= 0 or turns < 1 or turns > CONFIG.MAX_TURNS then
-		return { ok = false, reason = "ข้อมูลเทิร์นผิดปกติ" }
-	end
-	if duration < turns * CONFIG.SECONDS_PER_TURN then
-		warn(("[GlueCardServer] %s เวลาไม่สัมพันธ์กับเทิร์น: %d เทิร์น %.0f วิ"):format(player.Name, turns, duration))
-		return { ok = true, gold = 0, reason = "ข้อมูลแมตช์แปลกๆ ระบบไม่นับรางวัล 🤨" }
-	end
-	if won and (turns < CONFIG.MIN_WIN_TURNS or duration < CONFIG.MIN_WIN_SECONDS) then
-		return { ok = true, gold = 0, reason = "ชนะไวเกินไป ระบบไม่นับรางวัล 🤨" }
-	end
-	if not won and duration < CONFIG.MIN_LOSE_SECONDS then
-		return { ok = true, gold = 0, reason = "แพ้ไวไป ไม่ได้รางวัลปลอบใจ 😅" }
-	end
-
-	player:SetAttribute("GlueMatches", (player:GetAttribute("GlueMatches") or 0) + 1)
-	if won then player:SetAttribute("GlueWins", (player:GetAttribute("GlueWins") or 0) + 1) end
-	if not takeRewardSlot(player) then
-		return { ok = true, gold = 0, reason = "รับรางวัลครบโควตาชั่วโมงนี้แล้ว พักก่อนนะ ☕" }
-	end
-
-	-- คำนวณรางวัลตามระดับความยาก
-	local diffInfo = BOT_DIFFICULTIES[chosenDiff] or BOT_DIFFICULTIES.Normal
-	local gold = won and (diffInfo.winGold or 100) or (diffInfo.loseGold or 25)
-	if isMix and won then
-		gold += (BOT_DIFFICULTIES.Mix.bonusGold or 50)
-	end
-
-	if not grantReward(player, gold, won, turns) then
-		return { ok = false, reason = "บันทึกข้อมูลไม่สำเร็จ" }
-	end
-	return { ok = true, gold = gold, won = won }
-end
-
-LeaveTable.OnServerEvent:Connect(function(player)
-	sessions[player] = nil
-end)
-Players.PlayerRemoving:Connect(function(player)
-	sessions[player] = nil
-end)
-
----------------------------------------------------------------------
--- 🪑 4) ติด ProximityPrompt ให้โต๊ะ GlueDuelTable
----------------------------------------------------------------------
-local function promptPart(tbl)
-	if tbl:IsA("BasePart") then return tbl end
-	if tbl:IsA("Model") then return tbl.PrimaryPart or tbl:FindFirstChildWhichIsA("BasePart", true) end
-	return nil
-end
-
-local function setupTable(tbl)
-	if tbl:FindFirstChild("GlueDuelPrompt", true) then return end
-	local part = promptPart(tbl)
-	if not part then return end
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "GlueDuelPrompt"
-	prompt.ActionText = "ดวลกาวการ์ด 🃏"
-	prompt.ObjectText = "โต๊ะประลองการ์ดกาว"
-	prompt.KeyboardKeyCode = Enum.KeyCode.E
-	prompt.HoldDuration = 0.25
-	prompt.MaxActivationDistance = CONFIG.PROMPT_RANGE
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = part
-	prompt.Triggered:Connect(function(player)
-		onTableTriggered(player, tbl)
+local function saveProfile(player: Player)
+	local prof = profiles[player.UserId]
+	if not prof or not playerStore then return end
+	pcall(function()
+		(playerStore :: DataStore):SetAsync("Player_" .. tostring(player.UserId), prof)
 	end)
 end
 
-for _, t in ipairs(CollectionService:GetTagged(CONFIG.TABLE_TAG)) do setupTable(t) end
-CollectionService:GetInstanceAddedSignal(CONFIG.TABLE_TAG):Connect(setupTable)
-
----------------------------------------------------------------------
--- ⚡ 5) ดวลด่วน (QuickPlay) + เลือกระดับความยาก
----------------------------------------------------------------------
-local quickCD = {}
-QuickPlay.OnServerEvent:Connect(function(player, options)
-	local now = os.clock()
-	if quickCD[player] and now - quickCD[player] < 2 then return end
-	quickCD[player] = now
-
-	local s = sessions[player]
-	if s and s.matchId then return end -- กำลังดวลอยู่
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum or hum.Health <= 0 then return end
-
-	local req = typeof(options) == "table" and options or {}
-	local diff = req.difficulty or "Medium"
-	local mode = req.mode or "Quick"
-	local isMix = false
-
-	if diff == "Mix" or mode == "BotMix" then
-		local pool = { "Easy", "Medium", "Hard", "Hacker" }
-		diff = pool[math.random(1, #pool)]
-		isMix = true
+local function saveAllProfiles()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		task.spawn(saveProfile, plr)
 	end
-
-	sessions[player] = {
-		quick = true,
-		difficulty = diff,
-		mode = mode,
-		isMix = isMix,
-	}
-
-	OpenTable:FireClient(player, nil, {
-		difficulty = diff,
-		mode = mode,
-		isMix = isMix,
-		chaos = req.chaos,
-	})
-end)
-Players.PlayerRemoving:Connect(function(player)
-	quickCD[player] = nil
-end)
-
----------------------------------------------------------------------
--- 🛒 6) ร้านค้าซื้อซองการ์ดกาว (BuyPack Gacha)
----------------------------------------------------------------------
-local function pullOneCard()
-	local roll = math.random(1, 100)
-	local tier
-	if roll <= 3 then
-		tier = "Glue"
-	elseif roll <= 12 then
-		tier = "Legendary"
-	elseif roll <= 40 then
-		tier = "Rare"
-	else
-		tier = "Common"
-	end
-	local list = CHAOS_CARDS[tier] or CHAOS_CARDS.Common
-	local item = list[math.random(1, #list)]
-	return {
-		id = item.id,
-		name = item.name,
-		emoji = item.emoji,
-		rarity = tier,
-		kind = item.kind or "Monster",
-		atk = item.atk,
-		hp = item.hp,
-		cost = item.cost,
-	}
 end
 
-BuyPack.OnServerInvoke = function(player)
-	local data = DataService and DataService.GetData(player)
-	local currentGold = (data and data.Gold) or player:GetAttribute("Gold") or 0
-	if currentGold < CONFIG.PACK_COST_GOLD then
-		return { ok = false, reason = "เหรียญ Gold ไม่พอ (ต้องใช้ " .. CONFIG.PACK_COST_GOLD .. " Gold)" }
+-- Autosave ทุก 120 วินาที
+task.spawn(function()
+	while true do
+		task.wait(120)
+		saveAllProfiles()
 	end
+end)
 
-	-- หักเงิน
-	if DataService and type(DataService.AddGold) == "function" then
-		DataService.AddGold(player, -CONFIG.PACK_COST_GOLD)
-	else
-		player:SetAttribute("Gold", currentGold - CONFIG.PACK_COST_GOLD)
-	end
-
-	-- สุ่มการ์ด 3 ใบต่อซอง
-	local pulled = {}
-	for _ = 1, 3 do
-		local c = pullOneCard()
-		table.insert(pulled, c)
-		if data then
-			data.Collection = data.Collection or {}
-			data.Collection[c.id] = (data.Collection[c.id] or 0) + 1
+if not RunService:IsStudio() then
+	game:BindToClose(function()
+		for _, plr in ipairs(Players:GetPlayers()) do
+			saveProfile(plr)
 		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- 🛒 ระบบเปิดซองกาชา (BuyPack: 100 Gold -> 3 Cards)
+-- Common 60%, Rare 28%, Legendary 9%, Glue 3%
+---------------------------------------------------------------------
+local function rollOneCard(): CardDef
+	local r = math.random(1, 100)
+	local rarity = "Common"
+	if r <= 3 then
+		rarity = "Glue"
+	elseif r <= 12 then
+		rarity = "Legendary"
+	elseif r <= 40 then
+		rarity = "Rare"
+	else
+		rarity = "Common"
+	end
+	local pool = CARDS_BY_RARITY[rarity]
+	if not pool or #pool == 0 then
+		pool = ALL_CARDS
+	end
+	return pool[math.random(1, #pool)]
+end
+
+BuyPack.OnServerInvoke = function(player: Player)
+	local prof = profiles[player.UserId]
+	if not prof then
+		return { ok = false, reason = "ข้อมูลผู้เล่นยังโหลดไม่เสร็จ" }
+	end
+	if prof.Gold < 100 then
+		return { ok = false, reason = "Gold ไม่พอ! ต้องใช้ 100 Gold 🪙" }
 	end
 
-	if DataService then
-		DataService.Touch(player)
+	prof.Gold -= 100
+	prof.PacksOpened += 1
+
+	local pulled = {}
+	for i = 1, 3 do
+		local c = rollOneCard()
+		prof.Collection[c.id] = (prof.Collection[c.id] or 0) + 1
+		table.insert(pulled, {
+			id = c.id,
+			name = c.name,
+			emoji = c.emoji,
+			rarity = c.rarity,
+			cardType = c.cardType,
+			cost = c.cost,
+			atk = c.atk,
+			hp = c.hp,
+			desc = c.desc,
+			count = prof.Collection[c.id],
+		})
 	end
+
 	syncPlayerStats(player)
-
 	return {
 		ok = true,
+		gold = prof.Gold,
 		cards = pulled,
-		newGold = (data and data.Gold) or player:GetAttribute("Gold") or 0,
+		collection = prof.Collection,
 	}
 end
 
-GetCollection.OnServerInvoke = function(player)
-	local data = DataService and DataService.GetData(player)
-	return {
-		ok = true,
-		collection = (data and data.Collection) or {},
-		gold = (data and data.Gold) or player:GetAttribute("Gold") or 0,
-	}
-end
-
----------------------------------------------------------------------
--- 👤 7) ข้อมูลโปรไฟล์สาธารณะ (GetPublicProfile)
----------------------------------------------------------------------
-local function buildPublicProfile(targetPlayer)
-	if not targetPlayer then return nil end
-	local data = DataService and DataService.GetData(targetPlayer)
-	local wins = (data and data.Wins) or targetPlayer:GetAttribute("GlueWins") or 0
-	local losses = (data and data.Losses) or 0
-	local streak = (data and data.Streak) or targetPlayer:GetAttribute("Streak") or 0
-	local gold = (data and data.Gold) or targetPlayer:GetAttribute("Gold") or 0
-
-	return {
-		UserId = targetPlayer.UserId,
-		Name = targetPlayer.Name,
-		DisplayName = targetPlayer.DisplayName,
-		Wins = wins,
-		Losses = losses,
-		Matches = wins + losses,
-		Streak = streak,
-		BestStreak = (data and data.BestStreak) or streak,
-		Gold = gold,
-		Collection = (data and data.Collection) or {},
-		Deck = (data and data.Deck) or {},
-		TowerFloor = targetPlayer:GetAttribute("TowerFloor") or 1,
-	}
-end
-
-GetPublicProfile.OnServerInvoke = function(player, targetUserId)
-	local target = Players:GetPlayerByUserId(targetUserId) or player
-	local prof = buildPublicProfile(target)
-	if not prof then return false, "NOT_FOUND" end
-	return true, prof
-end
-
-GetProfile.OnServerInvoke = function(player)
-	local prof = buildPublicProfile(player)
-	if not prof then return false, "NOT_FOUND" end
-	return true, prof
-end
-
-SaveDeck.OnServerInvoke = function(player, ids)
-	local data = DataService and DataService.GetData(player)
-	if data and typeof(ids) == "table" then
-		data.Deck = ids
-		DataService.Touch(player)
-		return true
+GetCollection.OnServerInvoke = function(player: Player)
+	local prof = profiles[player.UserId]
+	if not prof then
+		prof = defaultProfile()
+		profiles[player.UserId] = prof
 	end
-	return true
+	return {
+		collection = prof.Collection,
+		allCards = ALL_CARDS,
+		gold = prof.Gold,
+		wins = prof.Wins,
+		losses = prof.Losses,
+		streak = prof.Streak,
+		packsOpened = prof.PacksOpened,
+		questsClaimed = prof.QuestsClaimed,
+	}
 end
 
-
 ---------------------------------------------------------------------
--- ⚔️ 8) ระบบจับคู่และจัดการแมตช์ PvP 1v1 ออนไลน์แบบ Real-time
+-- 📜 ระบบเควสต์กาวประจำวัน (ClaimQuest)
 ---------------------------------------------------------------------
-local pvpQueue = {}          -- คิวรอ { player }
-local activePvPMatches = {}  -- [matchId] = { id, p1, p2, turnPlayer, startedAt, ended }
-local playerToPvP = {}       -- [player] = matchId
-
-local PVP_CONFIG = {
-	TURN_TIME = 35,
-	WIN_GOLD = 150,
-	LOSE_GOLD = 40,
+local QUEST_DEFS: { [string]: { reward: number, check: (PlayerProfile) -> boolean } } = {
+	first_win = {
+		reward = 150,
+		check = function(p) return p.Wins >= 1 end,
+	},
+	win_3 = {
+		reward = 300,
+		check = function(p) return p.Wins >= 3 end,
+	},
+	open_pack = {
+		reward = 120,
+		check = function(p) return p.PacksOpened >= 1 end,
+	},
+	collector_10 = {
+		reward = 250,
+		check = function(p)
+			local unique = 0
+			for _, cnt in pairs(p.Collection) do
+				if cnt > 0 then unique += 1 end
+			end
+			return unique >= 10
+		end,
+	},
 }
 
-local function endPvPMatch(matchId, winnerPlayer, reason)
-	local m = activePvPMatches[matchId]
-	if not m or m.ended then return end
-	m.ended = true
-
-	local p1, p2 = m.p1, m.p2
-	playerToPvP[p1] = nil
-	playerToPvP[p2] = nil
-	activePvPMatches[matchId] = nil
-
-	local loserPlayer = (winnerPlayer == p1) and p2 or p1
-
-	-- บันทึกและมอบรางวัลผู้ชนะ
-	if winnerPlayer and winnerPlayer.Parent then
-		grantReward(winnerPlayer, PVP_CONFIG.WIN_GOLD, true, 6)
-		PvPMatchEnd:FireClient(winnerPlayer, { won = true, gold = PVP_CONFIG.WIN_GOLD, reason = reason or "ชนะการดวล 1v1!" })
+ClaimQuest.OnServerInvoke = function(player: Player, questId: any)
+	local qid = tostring(questId or "")
+	local def = QUEST_DEFS[qid]
+	local prof = profiles[player.UserId]
+	if not def or not prof then
+		return { ok = false, reason = "ไม่พบเควสต์นี้" }
 	end
+	if prof.QuestsClaimed[qid] then
+		return { ok = false, reason = "รับรางวัลเควสต์นี้ไปแล้ว!" }
+	end
+	if not def.check(prof) then
+		return { ok = false, reason = "ยังไม่ผ่านเงื่อนไขเควสต์!" }
+	end
+	prof.QuestsClaimed[qid] = true
+	prof.Gold += def.reward
+	syncPlayerStats(player)
+	return { ok = true, reward = def.reward, gold = prof.Gold, questsClaimed = prof.QuestsClaimed }
+end
 
-	-- บันทึกและมอบรางวัลปลอบใจผู้แพ้
-	if loserPlayer and loserPlayer.Parent then
-		grantReward(loserPlayer, PVP_CONFIG.LOSE_GOLD, false, 6)
-		PvPMatchEnd:FireClient(loserPlayer, { won = false, gold = PVP_CONFIG.LOSE_GOLD, reason = reason or "แพ้การดวล 1v1" })
+---------------------------------------------------------------------
+-- ⚔️ ระบบจัดการแมตช์ PvE บอท & Real PvP 1v1 + Custom Mode
+---------------------------------------------------------------------
+type ActiveBotMatch = {
+	matchId: string,
+	difficulty: string,
+	actualDiff: string,
+	isMix: boolean,
+	startTime: number,
+}
+
+type ActivePvPMatch = {
+	matchId: string,
+	p1: Player,
+	p2: Player,
+	turnUserId: number,
+	isCustom: boolean, -- true = โหมดเจาะจง 0 Gold
+	startTime: number,
+}
+
+local botSessions: { [number]: ActiveBotMatch } = {}
+local pvpQueue: { Player } = {}
+local pvpMatchesByPlayer: { [number]: ActivePvPMatch } = {}
+local pendingChallenges: { [number]: { challenger: Player, timestamp: number } } = {}
+
+local function removeFromQueue(player: Player)
+	for i = #pvpQueue, 1, -1 do
+		if pvpQueue[i] == player then
+			table.remove(pvpQueue, i)
+		end
 	end
 end
 
-local function startPvPMatch(p1, p2)
-	local matchId = HttpService:GenerateGUID(false)
-	local firstPlayer = (math.random() > 0.5) and p1 or p2
+local function findNearestDuelTable(player: Player): Model?
+	local tagged = CollectionService:GetTagged("GlueDuelTable")
+	if #tagged > 0 then
+		return tagged[1] :: Model
+	end
+	local t = workspace:FindFirstChild("CardTable")
+	if t and t:IsA("Model") then
+		return t
+	end
+	return nil
+end
 
-	local m = {
-		id = matchId,
+-- เริ่มแมตช์บอท (NewMatch)
+NewMatch.OnServerInvoke = function(player: Player, requestedDiff: any)
+	removeFromQueue(player)
+	local diffKey = tostring(requestedDiff or "Medium")
+	local isMix = (diffKey == "Mix")
+	local actualKey = diffKey
+	if isMix then
+		local pool = { "Easy", "Medium", "Hard", "Hacker" }
+		actualKey = pool[math.random(1, #pool)]
+	end
+	if not BOT_DIFFICULTIES[actualKey] then
+		actualKey = "Medium"
+	end
+
+	local botCfg = BOT_DIFFICULTIES[actualKey]
+	local matchId = HttpService:GenerateGUID(false)
+	botSessions[player.UserId] = {
+		matchId = matchId,
+		difficulty = diffKey,
+		actualDiff = actualKey,
+		isMix = isMix,
+		startTime = os.clock(),
+	}
+	player:SetAttribute("GlueInDuel", true)
+
+	local totalReward = botCfg.reward + (isMix and 50 or 0)
+	return {
+		matchId = matchId,
+		difficulty = diffKey,
+		actualDifficulty = actualKey,
+		botName = botCfg.name .. (isMix and " (🎲Mix)" or ""),
+		thinkTime = botCfg.thinkTime,
+		mistakeChance = botCfg.mistakeChance,
+		cheatMana = botCfg.cheatMana,
+		reward = totalReward,
+		isMix = isMix,
+	}
+end
+
+-- ส่งผลการดวล (ReportResult)
+ReportResult.OnServerInvoke = function(player: Player, matchId: any, payload: any)
+	local prof = profiles[player.UserId]
+	if not prof then
+		return { ok = false }
+	end
+	local won = type(payload) == "table" and payload.won == true
+
+	-- กรณีจบจาก PvP
+	local pvp = pvpMatchesByPlayer[player.UserId]
+	if pvp and pvp.matchId == tostring(matchId) then
+		local other = (pvp.p1 == player) and pvp.p2 or pvp.p1
+		pvpMatchesByPlayer[pvp.p1.UserId] = nil
+		pvpMatchesByPlayer[pvp.p2.UserId] = nil
+		pvp.p1:SetAttribute("GlueInDuel", false)
+		pvp.p2:SetAttribute("GlueInDuel", false)
+
+		local winGold = pvp.isCustom and 0 or 150
+		local loseGold = pvp.isCustom and 0 or 40
+
+		local winner = won and player or other
+		local loser = won and other or player
+
+		local winProf = profiles[winner.UserId]
+		if winProf then
+			winProf.Gold += winGold
+			winProf.Wins += 1
+			winProf.Streak += 1
+			if winProf.Streak > winProf.BestStreak then
+				winProf.BestStreak = winProf.Streak
+			end
+			syncPlayerStats(winner)
+		end
+
+		local loseProf = profiles[loser.UserId]
+		if loseProf then
+			loseProf.Gold += loseGold
+			loseProf.Losses += 1
+			loseProf.Streak = 0
+			syncPlayerStats(loser)
+		end
+
+		PvPMatchEnd:FireClient(winner, {
+			won = true,
+			goldEarned = winGold,
+			isCustom = pvp.isCustom,
+			reason = pvp.isCustom and "ชนะศึกสายกาว Custom Mode! (0 Gold)" or "ชนะดวล PvP 1v1!",
+		})
+		PvPMatchEnd:FireClient(loser, {
+			won = false,
+			goldEarned = loseGold,
+			isCustom = pvp.isCustom,
+			reason = pvp.isCustom and "พ่ายแพ้ในโหมด Custom (0 Gold)" or "พ่ายแพ้ศึก PvP (รับค่าปลอบใจ)",
+		})
+
+		return {
+			ok = true,
+			goldEarned = won and winGold or loseGold,
+			totalGold = prof.Gold,
+			isCustom = pvp.isCustom,
+		}
+	end
+
+	-- กรณีจบจากบอท PvE
+	local session = botSessions[player.UserId]
+	botSessions[player.UserId] = nil
+	player:SetAttribute("GlueInDuel", false)
+
+	if not session or session.matchId ~= tostring(matchId) then
+		return { ok = false }
+	end
+
+	local botCfg = BOT_DIFFICULTIES[session.actualDiff] or BOT_DIFFICULTIES.Medium
+	local goldEarned = 0
+	if won then
+		goldEarned = botCfg.reward + (session.isMix and 50 or 0)
+		prof.Gold += goldEarned
+		prof.Wins += 1
+		prof.Streak += 1
+		if prof.Streak > prof.BestStreak then
+			prof.BestStreak = prof.Streak
+		end
+	else
+		goldEarned = 20 -- รางวัลปลอบใจสู้บอท
+		prof.Gold += goldEarned
+		prof.Losses += 1
+		prof.Streak = 0
+	end
+
+	syncPlayerStats(player)
+	return {
+		ok = true,
+		won = won,
+		goldEarned = goldEarned,
+		totalGold = prof.Gold,
+		wins = prof.Wins,
+		streak = prof.Streak,
+	}
+end
+
+-- ดวลด่วน 1-Click (QuickPlay)
+QuickPlay.OnServerEvent:Connect(function(player: Player, options: any)
+	if player:GetAttribute("GlueInDuel") == true then return end
+	local diff = "Medium"
+	if type(options) == "table" and type(options.difficulty) == "string" then
+		diff = options.difficulty
+	end
+	local tableModel = findNearestDuelTable(player)
+	OpenTable:FireClient(player, tableModel, {
+		difficulty = diff,
+		mode = "Bot",
+	})
+end)
+
+---------------------------------------------------------------------
+-- 🌐 ระบบจับคู่ PvP 1v1 (Queue) & Custom PvP (เลือกคนสู้ 0 Gold)
+---------------------------------------------------------------------
+local function launchPvPMatch(p1: Player, p2: Player, isCustom: boolean)
+	removeFromQueue(p1)
+	removeFromQueue(p2)
+	botSessions[p1.UserId] = nil
+	botSessions[p2.UserId] = nil
+
+	local matchId = HttpService:GenerateGUID(false)
+	local p1First = (math.random(1, 2) == 1)
+	local firstUserId = p1First and p1.UserId or p2.UserId
+
+	local matchData: ActivePvPMatch = {
+		matchId = matchId,
 		p1 = p1,
 		p2 = p2,
-		turnPlayer = firstPlayer,
-		startedAt = os.clock(),
-		ended = false,
+		turnUserId = firstUserId,
+		isCustom = isCustom,
+		startTime = os.clock(),
 	}
-	activePvPMatches[matchId] = m
-	playerToPvP[p1] = matchId
-	playerToPvP[p2] = matchId
 
-	-- แจ้งเริ่มแมตช์ให้ทั้งสองฝั่งพร้อมข้อมูลคู่ต่อสู้
+	pvpMatchesByPlayer[p1.UserId] = matchData
+	pvpMatchesByPlayer[p2.UserId] = matchData
+
+	p1:SetAttribute("GlueInDuel", true)
+	p2:SetAttribute("GlueInDuel", true)
+
+	local tableModel = findNearestDuelTable(p1)
+
 	StartPvP:FireClient(p1, {
 		matchId = matchId,
-		yourSide = "player",
-		foeSide = "enemy",
-		isFirst = (firstPlayer == p1),
-		turnTime = PVP_CONFIG.TURN_TIME,
-		opponent = {
-			UserId = p2.UserId,
-			Name = p2.Name,
-			DisplayName = p2.DisplayName,
-		},
+		opponentUserId = p2.UserId,
+		opponentName = p2.DisplayName,
+		goFirst = p1First,
+		isCustom = isCustom,
+		tableModel = tableModel,
 	})
 
 	StartPvP:FireClient(p2, {
 		matchId = matchId,
-		yourSide = "player",
-		foeSide = "enemy",
-		isFirst = (firstPlayer == p2),
-		turnTime = PVP_CONFIG.TURN_TIME,
-		opponent = {
-			UserId = p1.UserId,
-			Name = p1.Name,
-			DisplayName = p1.DisplayName,
-		},
+		opponentUserId = p1.UserId,
+		opponentName = p1.DisplayName,
+		goFirst = not p1First,
+		isCustom = isCustom,
+		tableModel = tableModel,
 	})
 end
 
--- ผู้เล่นกดเข้าคิวหาคู่ดวล 1v1
-JoinPvPQueue.OnServerEvent:Connect(function(player)
-	if playerToPvP[player] then return end
-	for _, p in ipairs(pvpQueue) do
-		if p == player then return end
-	end
-
+JoinPvPQueue.OnServerEvent:Connect(function(player: Player)
+	if player:GetAttribute("GlueInDuel") == true then return end
+	removeFromQueue(player)
 	table.insert(pvpQueue, player)
 
-	-- ถ้ามีผู้เล่นรอในคิวตั้งแต่ 2 คนขึ้นไป จับคู่ทันที
 	if #pvpQueue >= 2 then
-		local p1 = table.remove(pvpQueue, 1)
-		local p2 = table.remove(pvpQueue, 1)
-		if p1.Parent and p2.Parent and p1 ~= p2 then
-			startPvPMatch(p1, p2)
-		else
-			if p1.Parent then table.insert(pvpQueue, 1, p1) end
-			if p2.Parent then table.insert(pvpQueue, 1, p2) end
+		local p1 = table.remove(pvpQueue, 1) :: Player
+		local p2 = table.remove(pvpQueue, 1) :: Player
+		if p1 and p2 and p1.Parent == Players and p2.Parent == Players and p1 ~= p2 then
+			launchPvPMatch(p1, p2, false)
+		elseif p1 and p1.Parent == Players then
+			table.insert(pvpQueue, p1)
+		elseif p2 and p2.Parent == Players then
+			table.insert(pvpQueue, p2)
 		end
 	end
 end)
 
--- ผู้เล่นกดยกเลิกการหาคู่
-LeavePvPQueue.OnServerEvent:Connect(function(player)
-	for i = #pvpQueue, 1, -1 do
-		if pvpQueue[i] == player then
-			table.remove(pvpQueue, i)
-			break
-		end
-	end
+LeavePvPQueue.OnServerEvent:Connect(function(player: Player)
+	removeFromQueue(player)
 end)
 
--- ส่งต่อคำสั่ง (Action Relay) ระหว่าง 2 เครื่อง
-PvPAction.OnServerEvent:Connect(function(player, matchId, actionType, actionData)
-	local m = activePvPMatches[matchId]
-	if not m or m.ended then return end
+-- ระบบท้าดวลแบบเจาะจงตัวผู้เล่น (Custom Mode - 0 Gold)
+SendCustomChallenge.OnServerEvent:Connect(function(challenger: Player, targetUserId: any)
+	local tid = tonumber(targetUserId)
+	if not tid or tid == challenger.UserId then return end
+	if challenger:GetAttribute("GlueInDuel") == true then return end
 
-	local opponent = (player == m.p1) and m.p2 or m.p1
-	if not opponent or not opponent.Parent then return end
-
-	if actionType == "EndTurn" then
-		m.turnPlayer = opponent
-	elseif actionType == "Surrender" then
-		endPvPMatch(matchId, opponent, "คู่ต่อสู้ขอยอมแพ้ 🏳️")
-		return
-	elseif actionType == "HeroDead" then
-		endPvPMatch(matchId, opponent, "โค่นฮีโร่สำเร็จ! 💀")
+	local targetPlayer = Players:GetPlayerByUserId(tid)
+	if not targetPlayer or targetPlayer:GetAttribute("GlueInDuel") == true then
 		return
 	end
 
-	-- ส่งต่อให้อีกฝ่ายแสดงผลแบบ Real-time
-	PvPActionRelay:FireClient(opponent, matchId, actionType, actionData)
+	pendingChallenges[targetPlayer.UserId] = {
+		challenger = challenger,
+		timestamp = os.clock(),
+	}
+
+	IncomingCustomChallenge:FireClient(targetPlayer, {
+		challengerUserId = challenger.UserId,
+		challengerName = challenger.DisplayName,
+	})
 end)
 
--- จัดการเมื่อผู้เล่นหลุดออกจากเกมระหว่างดวล
-Players.PlayerRemoving:Connect(function(player)
-	for i = #pvpQueue, 1, -1 do
-		if pvpQueue[i] == player then table.remove(pvpQueue, i) end
+RespondCustomChallenge.OnServerEvent:Connect(function(targetPlayer: Player, payload: any)
+	local challenge = pendingChallenges[targetPlayer.UserId]
+	pendingChallenges[targetPlayer.UserId] = nil
+	if not challenge then return end
+
+	local accepted = type(payload) == "table" and payload.accepted == true
+	local challenger = challenge.challenger
+	if not accepted then return end
+	if not challenger or challenger.Parent ~= Players then return end
+	if challenger:GetAttribute("GlueInDuel") == true or targetPlayer:GetAttribute("GlueInDuel") == true then
+		return
 	end
 
-	local matchId = playerToPvP[player]
-	if matchId then
-		local m = activePvPMatches[matchId]
-		if m and not m.ended then
-			local opponent = (player == m.p1) and m.p2 or m.p1
-			endPvPMatch(matchId, opponent, "คู่ต่อสู้ออกจากเกม 🏃💨")
+	-- เริ่มแมตช์ Custom Mode (isCustom = true -> ไม่ได้รับ Gold)
+	launchPvPMatch(challenger, targetPlayer, true)
+end)
+
+-- Server Action Relay (ส่งต่อคำสั่ง Real-time ระหว่าง Player A <-> Player B)
+PvPAction.OnServerEvent:Connect(function(player: Player, actionData: any)
+	if type(actionData) ~= "table" then return end
+	local pvp = pvpMatchesByPlayer[player.UserId]
+	if not pvp then return end
+
+	local opponent = (pvp.p1 == player) and pvp.p2 or pvp.p1
+	if not opponent or opponent.Parent ~= Players then return end
+
+	if actionData.action == "EndTurn" then
+		pvp.turnUserId = opponent.UserId
+	end
+
+	PvPActionRelay:FireClient(opponent, actionData)
+end)
+
+-- ระบบตรวจจับการยอมแพ้ / ออกจากโต๊ะ / เน็ตหลุด (Forfeit Protection)
+local function handlePlayerForfeitOrLeave(player: Player, reasonText: string)
+	removeFromQueue(player)
+	botSessions[player.UserId] = nil
+	player:SetAttribute("GlueInDuel", false)
+
+	local pvp = pvpMatchesByPlayer[player.UserId]
+	if pvp then
+		local survivor = (pvp.p1 == player) and pvp.p2 or pvp.p1
+		pvpMatchesByPlayer[pvp.p1.UserId] = nil
+		pvpMatchesByPlayer[pvp.p2.UserId] = nil
+
+		if survivor and survivor.Parent == Players then
+			survivor:SetAttribute("GlueInDuel", false)
+			local rewardGold = pvp.isCustom and 0 or 150
+			local survProf = profiles[survivor.UserId]
+			if survProf then
+				survProf.Gold += rewardGold
+				survProf.Wins += 1
+				survProf.Streak += 1
+				if survProf.Streak > survProf.BestStreak then
+					survProf.BestStreak = survProf.Streak
+				end
+				syncPlayerStats(survivor)
+			end
+			PvPMatchEnd:FireClient(survivor, {
+				won = true,
+				forfeit = true,
+				goldEarned = rewardGold,
+				isCustom = pvp.isCustom,
+				reason = reasonText,
+			})
 		end
 	end
+end
+
+LeaveTable.OnServerEvent:Connect(function(player: Player)
+	handlePlayerForfeitOrLeave(player, "คู่ต่อสู้กดยอมแพ้ออกจากโต๊ะ! 🏳️")
 end)
 
-print("[GlueCardServer] ✅ ระบบดวลการ์ดกาว + PvP ออนไลน์ 1v1 + ระบบเหรียญ Gold พร้อมทำงาน!")
+Players.PlayerAdded:Connect(loadProfile)
+for _, plr in ipairs(Players:GetPlayers()) do
+	task.spawn(loadProfile, plr)
+end
+
+Players.PlayerRemoving:Connect(function(player: Player)
+	handlePlayerForfeitOrLeave(player, "คู่ต่อสู้เน็ตหลุดออกจากเกม! ชนะบายทันที 🏆")
+	saveProfile(player)
+	profiles[player.UserId] = nil
+end)
