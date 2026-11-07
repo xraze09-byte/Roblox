@@ -468,7 +468,12 @@ end
 -- เริ่มแมตช์บอท (NewMatch)
 NewMatch.OnServerInvoke = function(player: Player, requestedDiff: any)
 	removeFromQueue(player)
-	local diffKey = tostring(requestedDiff or "Medium")
+	local diffKey = "Medium"
+	if type(requestedDiff) == "table" then
+		diffKey = tostring(requestedDiff.difficulty or "Medium")
+	elseif type(requestedDiff) == "string" then
+		diffKey = requestedDiff
+	end
 	local isMix = (diffKey == "Mix")
 	local actualKey = diffKey
 	if isMix then
@@ -548,12 +553,14 @@ ReportResult.OnServerInvoke = function(player: Player, matchId: any, payload: an
 
 		PvPMatchEnd:FireClient(winner, {
 			won = true,
+			gold = winGold,
 			goldEarned = winGold,
 			isCustom = pvp.isCustom,
 			reason = pvp.isCustom and "ชนะศึกสายกาว Custom Mode! (0 Gold)" or "ชนะดวล PvP 1v1!",
 		})
 		PvPMatchEnd:FireClient(loser, {
 			won = false,
+			gold = loseGold,
 			goldEarned = loseGold,
 			isCustom = pvp.isCustom,
 			reason = pvp.isCustom and "พ่ายแพ้ในโหมด Custom (0 Gold)" or "พ่ายแพ้ศึก PvP (รับค่าปลอบใจ)",
@@ -561,6 +568,7 @@ ReportResult.OnServerInvoke = function(player: Player, matchId: any, payload: an
 
 		return {
 			ok = true,
+			gold = won and winGold or loseGold,
 			goldEarned = won and winGold or loseGold,
 			totalGold = prof.Gold,
 			isCustom = pvp.isCustom,
@@ -597,6 +605,7 @@ ReportResult.OnServerInvoke = function(player: Player, matchId: any, payload: an
 	return {
 		ok = true,
 		won = won,
+		gold = goldEarned,
 		goldEarned = goldEarned,
 		totalGold = prof.Gold,
 		wins = prof.Wins,
@@ -828,6 +837,7 @@ local function handlePlayerForfeitOrLeave(player: Player, reasonText: string)
 			PvPMatchEnd:FireClient(survivor, {
 				won = true,
 				forfeit = true,
+				gold = rewardGold,
 				goldEarned = rewardGold,
 				isCustom = pvp.isCustom,
 				reason = reasonText,

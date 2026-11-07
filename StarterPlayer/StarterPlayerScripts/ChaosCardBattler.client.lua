@@ -1569,6 +1569,17 @@ local function playCard(side, card)
 
 	if def.kind == "Monster" then
 		local slot = getEmptySlot(side)
+		if side == "player" and State.isPvP then
+			local folder = game:GetService("ReplicatedStorage"):FindFirstChild("GlueCardRemotes")
+			local pvpAction = folder and folder:FindFirstChild("PvPAction")
+			if pvpAction then
+				pvpAction:FireServer(State.pvpMatchId, "PlayCard", {
+					slot = slot,
+					cardId = def.id,
+					isSpell = false,
+				})
+			end
+		end
 		local slotFrame = SlotFrames[side][slot]
 		flyGhost(def, startPos, centerOf(slotFrame), slotFrame.AbsoluteSize.Y, 0.35)
 		local unit = summonUnit(side, def, slot)
@@ -1578,6 +1589,16 @@ local function playCard(side, card)
 			task.wait(0.4)
 		end
 	else
+		if side == "player" and State.isPvP then
+			local folder = game:GetService("ReplicatedStorage"):FindFirstChild("GlueCardRemotes")
+			local pvpAction = folder and folder:FindFirstChild("PvPAction")
+			if pvpAction then
+				pvpAction:FireServer(State.pvpMatchId, "PlayCard", {
+					cardId = def.id,
+					isSpell = true,
+				})
+			end
+		end
 		local center = centerOf(Main)
 		local ghost = flyGhost(def, startPos, center, Main.AbsoluteSize.Y * 0.38, 0.35, true)
 		flash(Color3.fromRGB(200, 150, 255), 0.6, 0.4)
@@ -1595,17 +1616,7 @@ local function playCard(side, card)
 		task.wait(0.3)
 	end
 	addGlue(side, 5)
-	if side == "player" and State.isPvP then
-		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("GlueCardRemotes")
-		local pvpAction = folder and folder:FindFirstChild("PvPAction")
-		if pvpAction then
-			pvpAction:FireServer(State.pvpMatchId, "PlayCard", {
-				slot = card.slot,
-				cardId = def.id,
-				isSpell = (def.kind == "Spell"),
-			})
-		end
-	end
+
 	State.busy = false
 	refreshInteractivity()
 	checkGameOver()
@@ -2344,7 +2355,7 @@ local function buildDeck()
 	return shuffle(deck)
 end
 
-resetGame = function()
+resetGame = function(isPvP, isFirst)
 	State.gameId += 1
 	if GameOverFrame then GameOverFrame:Destroy(); GameOverFrame = nil end
 	for _, side in ipairs(SIDES) do
@@ -2361,7 +2372,6 @@ resetGame = function()
 	end
 	Shaker.Rotation = 0
 	dragInfo, hoveredCard, previewKey = nil, nil, nil
-	State.current = "player"
 	State.turnCount = 0
 	State.busy = true
 	State.gameOver = false
@@ -2371,26 +2381,58 @@ resetGame = function()
 		State.sides[side].deck = buildDeck()
 	end
 	lastShown = { player = {}, enemy = {} }
-	local curBot = State.currentBot or DEFAULT_BOT; Hero.enemy.avatar.Text = curBot.avatar or "🤖"; if Hero.enemy.nameLabel then Hero.enemy.nameLabel.Text = curBot.name or "บอทลุงกาว 🤖 Lv.99" end
-	setTurnLabel()
-	updateHeroUI()
-	refreshInteractivity()
-	addLog("🎮 เกมใหม่เริ่มแล้ว! โหมด: " .. CHAOS_MODES[State.chaos].name, COLORS.gold)
 
-	local gid = State.gameId
-	task.spawn(function()
-		local curBot = State.currentBot or DEFAULT_BOT; banner("🃏 กาวการ์ด!", "โหมด " .. CHAOS_MODES[State.chaos].name .. " • " .. (curBot.name or "ดวลเดือด"), COLORS.glue, 1.2)
-		task.wait(1.7)
-		for _ = 1, CONFIG.START_HAND do
-			if State.gameId ~= gid then return end
-			drawCard("player")
+	if not isPvP then
+		State.current = "player"
+		local curBot = State.currentBot or DEFAULT_BOT
+		Hero.enemy.avatar.Text = curBot.avatar or "🤖"
+		if Hero.enemy.nameLabel then Hero.enemy.nameLabel.Text = curBot.name or "บอทลุงกาว 🤖 Lv.99" end
+		setTurnLabel()
+		updateHeroUI()
+		refreshInteractivity()
+		addLog("🎮 เกมใหม่เริ่มแล้ว! โหมด: " .. CHAOS_MODES[State.chaos].name, COLORS.gold)
+
+		local gid = State.gameId
+		task.spawn(function()
+			banner("🃏 กาวการ์ด!", "โหมด " .. CHAOS_MODES[State.chaos].name .. " • " .. (curBot.name or "ดวลเดือด"), COLORS.glue, 1.2)
+			task.wait(1.7)
+			for _ = 1, CONFIG.START_HAND do
+				if State.gameId ~= gid then return end
+				drawCard("player")
+				drawCard("enemy")
+				task.wait(0.18)
+			end
 			drawCard("enemy")
-			task.wait(0.18)
-		end
-		drawCard("enemy")
-		task.wait(0.4)
-		if State.gameId == gid then startTurn("player") end
-	end)
+			task.wait(0.4)
+			if State.gameId == gid then startTurn("player") end
+		end)
+	else
+		State.current = isFirst and "player" or "enemy"
+		setTurnLabel()
+		updateHeroUI()
+		refreshInteractivity()
+		addLog("⚔️ เริ่มการดวล PvP 1v1 กับ " .. (State.pvpOpponent and State.pvpOpponent.DisplayName or "คู่ต่อสู้"), COLORS.gold)
+
+		local gid = State.gameId
+		task.spawn(function()
+			banner("⚔️ ดวลสด 1v1!", isFirst and "คุณได้เริ่มก่อน! ลุยยย!" or ((State.pvpOpponent and State.pvpOpponent.DisplayName or "คู่ต่อสู้") .. " ได้เริ่มก่อน!"), isFirst and COLORS.gold or COLORS.enemy, 1.5)
+			task.wait(1.7)
+			for _ = 1, CONFIG.START_HAND do
+				if State.gameId ~= gid then return end
+				drawCard("player")
+				drawCard("enemy")
+				task.wait(0.18)
+			end
+			task.wait(0.4)
+			if State.gameId == gid then
+				if isFirst then
+					startTurn("player")
+				else
+					startTurn("enemy")
+				end
+			end
+		end)
+	end
 end
 
 ---------------------------------------------------------------------
@@ -2715,10 +2757,20 @@ do
 	end
 
 	local function startMatch(options)
-		local ok, matchId = pcall(function() return Remotes.NewMatch:InvokeServer(options) end)
-		if not ok or type(matchId) ~= "string" then return false end
+		local ok, res = pcall(function() return Remotes.NewMatch:InvokeServer(options) end)
+		if not ok then return false end
+		local matchId: string? = nil
+		if type(res) == "string" then
+			matchId = res
+		elseif type(res) == "table" and type(res.matchId) == "string" then
+			matchId = res.matchId
+			if res.botName and Hero.enemy.nameLabel then
+				Hero.enemy.nameLabel.Text = res.botName
+			end
+		end
+		if not matchId then return false end
 		Lobby.matchId = matchId
-		resetGame()
+		resetGame(false)
 		return true
 	end
 
@@ -2801,12 +2853,13 @@ do
 		if not rewardLabel.Parent then return end
 		if not ok or type(res) ~= "table" then
 			rewardLabel.Text = "⚠️ ส่งผลไม่สำเร็จ (เน็ตหลุด?)"
-		elseif type(res.gold) == "number" and res.gold > 0 then
+		elseif (type(res.gold) == "number" and res.gold > 0) or (type(res.goldEarned) == "number" and res.goldEarned > 0) then
+			local goldVal = tonumber(res.gold or res.goldEarned) or 0
 			local counter = Instance.new("NumberValue")
 			counter.Changed:Connect(function(v)
 				if rewardLabel.Parent then rewardLabel.Text = "💰 ได้รับ +" .. math.floor(v) .. " Gold!" end
 			end)
-			tween(counter, 1, { Value = res.gold }, Enum.EasingStyle.Quart)
+			tween(counter, 1, { Value = goldVal }, Enum.EasingStyle.Quart)
 			Debris:AddItem(counter, 1.5)
 			burst(centerOf(rewardLabel), { "💰", "🪙", COLORS.gold }, 18, 180)
 			punch(rewardLabel, 1.4)
@@ -2888,20 +2941,8 @@ do
 			end
 		end)
 
-		resetGame()
-
 		local isFirst = (data.isFirst ~= nil) and data.isFirst or (data.goFirst == true)
-		if isFirst then
-			State.current = "player"
-			State.busy = false
-			banner("⚔️ ดวลสด 1v1!", "คุณได้เริ่มก่อน! ลุยยย!", COLORS.gold, 1.4)
-		else
-			State.current = "enemy"
-			State.busy = true
-			banner("⚔️ ดวลสด 1v1!", (opp.DisplayName or "คู่ต่อสู้") .. " ได้เริ่มก่อน!", COLORS.enemy, 1.4)
-		end
-
-		refreshInteractivity()
+		resetGame(true, isFirst)
 		fadeTo(1, 0.4)
 		Lobby.busy = false
 	end
