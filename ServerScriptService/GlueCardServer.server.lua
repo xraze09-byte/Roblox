@@ -650,18 +650,36 @@ local function launchPvPMatch(p1: Player, p2: Player, isCustom: boolean)
 
 	StartPvP:FireClient(p1, {
 		matchId = matchId,
+		yourSide = "player",
+		foeSide = "enemy",
+		isFirst = p1First,
+		goFirst = p1First,
+		turnTime = 45,
+		opponent = {
+			UserId = p2.UserId,
+			DisplayName = p2.DisplayName,
+			Name = p2.Name,
+		},
 		opponentUserId = p2.UserId,
 		opponentName = p2.DisplayName,
-		goFirst = p1First,
 		isCustom = isCustom,
 		tableModel = tableModel,
 	})
 
 	StartPvP:FireClient(p2, {
 		matchId = matchId,
+		yourSide = "player",
+		foeSide = "enemy",
+		isFirst = not p1First,
+		goFirst = not p1First,
+		turnTime = 45,
+		opponent = {
+			UserId = p1.UserId,
+			DisplayName = p1.DisplayName,
+			Name = p1.Name,
+		},
 		opponentUserId = p1.UserId,
 		opponentName = p1.DisplayName,
-		goFirst = not p1First,
 		isCustom = isCustom,
 		tableModel = tableModel,
 	})
@@ -729,19 +747,57 @@ RespondCustomChallenge.OnServerEvent:Connect(function(targetPlayer: Player, payl
 end)
 
 -- Server Action Relay (ส่งต่อคำสั่ง Real-time ระหว่าง Player A <-> Player B)
-PvPAction.OnServerEvent:Connect(function(player: Player, actionData: any)
-	if type(actionData) ~= "table" then return end
+PvPAction.OnServerEvent:Connect(function(player: Player, arg1: any, arg2: any, arg3: any)
 	local pvp = pvpMatchesByPlayer[player.UserId]
 	if not pvp then return end
 
 	local opponent = (pvp.p1 == player) and pvp.p2 or pvp.p1
 	if not opponent or opponent.Parent ~= Players then return end
 
-	if actionData.action == "EndTurn" then
-		pvp.turnUserId = opponent.UserId
+	local matchId: string = ""
+	local actionType: string = ""
+	local payload: any = {}
+
+	if type(arg1) == "string" and type(arg2) == "string" then
+		-- Called as: FireServer(matchId, actionType, data)
+		matchId = arg1
+		actionType = arg2
+		payload = (type(arg3) == "table") and arg3 or {}
+	elseif type(arg1) == "table" then
+		-- Called as: FireServer(actionTable)
+		payload = arg1
+		actionType = tostring(payload.action or payload.actionType or "")
+		matchId = tostring(payload.matchId or "")
+	else
+		return
 	end
 
-	PvPActionRelay:FireClient(opponent, actionData)
+	if actionType == "EndTurn" then
+		pvp.turnUserId = opponent.UserId
+	elseif actionType == "Surrender" then
+		handlePlayerForfeitOrLeave(player, "คู่ต่อสู้ยอมแพ้การดวล")
+		return
+	elseif actionType == "Victory" then
+		handlePlayerForfeitOrLeave(opponent, "ชนะการดวล 1v1!")
+		return
+	end
+
+	-- ส่งต่อให้คู่ต่อสู้ทั้งสองรูปแบบ (argument แยก และแบบ table) เพื่อให้ Client ทุกแบบรับได้แน่นอน
+	PvPActionRelay:FireClient(opponent, matchId, actionType, payload)
+	local tblPayload = {
+		action = actionType,
+		actionType = actionType,
+		matchId = matchId,
+		data = payload,
+		slot = payload.slot,
+		cardId = payload.cardId,
+		isSpell = payload.isSpell,
+		attackerSlot = payload.attackerSlot,
+		targetType = payload.targetType,
+		targetSlot = payload.targetSlot,
+		text = payload.text,
+	}
+	PvPActionRelay:FireClient(opponent, tblPayload)
 end)
 
 -- ระบบตรวจจับการยอมแพ้ / ออกจากโต๊ะ / เน็ตหลุด (Forfeit Protection)
